@@ -1,36 +1,27 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# resume-revisioner
 
-## Getting Started
+Local tool for tailoring [`experience.yaml`](../experience.yaml) to a specific job description. Paste in a JD, get your bullet bank ranked by keyword overlap, and see which JD keywords aren't covered by any bullet.
 
-First, run the development server:
+## Run it
 
 ```bash
+npm install   # first time only
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How it works
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Paste the raw job description text into the textarea and set a max-bullets-per-role limit (default 4).
+2. `POST /api/analyze` ([app/api/analyze/route.ts](app/api/analyze/route.ts)) reads `experience.yaml` from the repo root fresh on every request, so edits there show up without restarting the server.
+3. Scoring ([lib/scoring.ts](lib/scoring.ts)): each bullet is scored by how many of its tags (weighted 2x) and significant text words (weighted 1x) appear in the JD. Bullets are ranked within their job/project section and the top N (per the max-bullets setting) are shown.
+4. Gaps ([lib/scoring.ts](lib/scoring.ts) `findGaps`): unigrams and bigrams are extracted from the JD (sentence-aware, so bigrams don't bridge two sentences), filtered against a stopword list, then checked against the full bullet bank. Anything with zero coverage — and not just an incidental pairing of two skills you do have — is listed as a gap to address in a cover letter or interview prep.
 
-## Learn More
+Nothing is written back to `experience.yaml` or any `.tex` file — this only prints recommendations for you to review and copy in yourself.
 
-To learn more about Next.js, take a look at the following resources:
+## Adjusting keyword matching
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Stopwords / JD filler words: [lib/stopwords.ts](lib/stopwords.ts)
+- Normalization + phrase extraction: [lib/keywords.ts](lib/keywords.ts)
+- Scoring/ranking/gap logic: [lib/scoring.ts](lib/scoring.ts)
