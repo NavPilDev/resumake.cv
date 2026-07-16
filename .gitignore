@@ -1,2 +1,5 @@
 latex-resumes/build/
 latex-resumes/out/*.synctex.gz
+
+latex-covers/build/
+latex-covers/out/*.synctex.gz
