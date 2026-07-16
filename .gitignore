@@ -1,0 +1,6 @@
+latex-resumes/*.out
+latex-resumes/*.synctex.gz
+latex-resumes/*.log
+latex-resumes/*.fls
+latex-resumes/*.fdb_latexmk
+latex-resumes/*.aux
