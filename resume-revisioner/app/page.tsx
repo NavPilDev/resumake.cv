@@ -397,143 +397,147 @@ export default function Home() {
                 ))}
               </div>
 
-              <aside className="h-fit rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-                <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">Skill gaps</h2>
-                <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-                  JD keywords with no match anywhere in your bullet bank. Consider addressing these
-                  in your cover letter or interview prep.
-                </p>
-                {result.gaps.length === 0 ? (
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    No gaps found — the JD is well covered by your bullet bank.
+              <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
+                <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+                  <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">Skill gaps</h2>
+                  <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                    JD keywords with no match anywhere in your bullet bank. Consider addressing these
+                    in your cover letter or interview prep.
                   </p>
-                ) : (
-                  <ul className="flex flex-wrap gap-1.5">
-                    {result.gaps.map((g) => (
-                      <li
-                        key={g.keyword}
-                        className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300"
-                        title={g.frequency ? `mentioned ${g.frequency}x in the JD` : "flagged by Ollama"}
-                      >
-                        {g.keyword}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </aside>
-            </section>
-
-            <section className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-              <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">
-                Generate tailored resume
-              </h2>
-              <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-                Writes a new .tex file (and compiles a PDF) into{" "}
-                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
-                  latex-resumes/
-                </code>
-                , using master-resume.tex&apos;s template with your top-scoring jobs and projects
-                above (including any edits/improvements you&apos;ve made). It compiles repeatedly
-                and trims the weakest bullets, then whole projects, then whole jobs, until it fits
-                your page limit — education and technical skills are copied as-is from{" "}
-                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
-                  experience.yaml
-                </code>{" "}
-                and aren&apos;t trimmed.
-              </p>
-
-              <div className="flex flex-wrap items-end gap-4">
-                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-                  Filename
-                  <input
-                    type="text"
-                    value={genFilename}
-                    onChange={(e) => {
-                      setGenFilename(e.target.value);
-                      setNeedsOverwriteConfirm(false);
-                    }}
-                    className="w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-                  Max jobs
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    value={genMaxJobs}
-                    onChange={(e) => setGenMaxJobs(Number(e.target.value) || 0)}
-                    className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-                  Max projects
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    value={genMaxProjects}
-                    onChange={(e) => setGenMaxProjects(Number(e.target.value) || 0)}
-                    className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-                  Max pages
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={genMaxPages}
-                    onChange={(e) => setGenMaxPages(Number(e.target.value) || 1)}
-                    className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                  />
-                </label>
-
-                <button
-                  onClick={() => handleGenerate(needsOverwriteConfirm)}
-                  disabled={generating}
-                  className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                >
-                  {generating
-                    ? "Compiling…"
-                    : needsOverwriteConfirm
-                      ? "Overwrite and Generate"
-                      : "Generate Resume"}
-                </button>
-              </div>
-
-              {generateError && (
-                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{generateError}</p>
-              )}
-
-              {generateResult && (
-                <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
-                  <p>
-                    Wrote <code className="font-mono">{generateResult.texPath}</code> —{" "}
-                    {generateResult.pagesUsed ?? "unknown"} page(s)
-                    {generateResult.pdfPath && (
-                      <>
-                        {" "}
-                        · PDF at <code className="font-mono">{generateResult.pdfPath}</code>
-                      </>
-                    )}
-                  </p>
-                  {generateResult.trimmedItems.length > 0 && (
-                    <ul className="mt-2 list-inside list-disc text-xs text-emerald-800 dark:text-emerald-300">
-                      {generateResult.trimmedItems.map((item, i) => (
-                        <li key={i}>{item}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {generateResult.warnings && generateResult.warnings.length > 0 && (
-                    <ul className="mt-2 list-inside list-disc text-xs text-amber-700 dark:text-amber-400">
-                      {generateResult.warnings.map((w, i) => (
-                        <li key={i}>{w}</li>
+                  {result.gaps.length === 0 ? (
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                      No gaps found — the JD is well covered by your bullet bank.
+                    </p>
+                  ) : (
+                    <ul className="flex flex-wrap gap-1.5">
+                      {result.gaps.map((g) => (
+                        <li
+                          key={g.keyword}
+                          className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                          title={g.frequency ? `mentioned ${g.frequency}x in the JD` : "flagged by Ollama"}
+                        >
+                          {g.keyword}
+                        </li>
                       ))}
                     </ul>
                   )}
                 </div>
-              )}
+
+                <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+                  <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">
+                    Generate tailored resume
+                  </h2>
+                  <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                    Writes a new .tex file (and compiles a PDF) into{" "}
+                    <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                      latex-resumes/
+                    </code>
+                    , using master-resume.tex&apos;s template with your top-scoring jobs and projects
+                    above (including any edits/improvements you&apos;ve made). It compiles repeatedly
+                    and trims the weakest bullets, then whole projects, then whole jobs, until it fits
+                    your page limit — education and technical skills are copied as-is from{" "}
+                    <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                      experience.yaml
+                    </code>{" "}
+                    and aren&apos;t trimmed.
+                  </p>
+
+                  <div className="flex flex-col gap-3">
+                    <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                      Filename
+                      <input
+                        type="text"
+                        value={genFilename}
+                        onChange={(e) => {
+                          setGenFilename(e.target.value);
+                          setNeedsOverwriteConfirm(false);
+                        }}
+                        className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                      />
+                    </label>
+                    <div className="flex flex-wrap gap-3">
+                      <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                        Max jobs
+                        <input
+                          type="number"
+                          min={0}
+                          max={50}
+                          value={genMaxJobs}
+                          onChange={(e) => setGenMaxJobs(Number(e.target.value) || 0)}
+                          className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                        Max projects
+                        <input
+                          type="number"
+                          min={0}
+                          max={50}
+                          value={genMaxProjects}
+                          onChange={(e) => setGenMaxProjects(Number(e.target.value) || 0)}
+                          className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                        Max pages
+                        <input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={genMaxPages}
+                          onChange={(e) => setGenMaxPages(Number(e.target.value) || 1)}
+                          className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={() => handleGenerate(needsOverwriteConfirm)}
+                      disabled={generating}
+                      className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                    >
+                      {generating
+                        ? "Compiling…"
+                        : needsOverwriteConfirm
+                          ? "Overwrite and Generate"
+                          : "Generate Resume"}
+                    </button>
+                  </div>
+
+                  {generateError && (
+                    <p className="mt-2 text-sm text-red-600 dark:text-red-400">{generateError}</p>
+                  )}
+
+                  {generateResult && (
+                    <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                      <p>
+                        Wrote <code className="font-mono">{generateResult.texPath}</code> —{" "}
+                        {generateResult.pagesUsed ?? "unknown"} page(s)
+                        {generateResult.pdfPath && (
+                          <>
+                            {" "}
+                            · PDF at <code className="font-mono">{generateResult.pdfPath}</code>
+                          </>
+                        )}
+                      </p>
+                      {generateResult.trimmedItems.length > 0 && (
+                        <ul className="mt-2 list-inside list-disc text-xs text-emerald-800 dark:text-emerald-300">
+                          {generateResult.trimmedItems.map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {generateResult.warnings && generateResult.warnings.length > 0 && (
+                        <ul className="mt-2 list-inside list-disc text-xs text-amber-700 dark:text-amber-400">
+                          {generateResult.warnings.map((w, i) => (
+                            <li key={i}>{w}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </aside>
             </section>
           </>
         )}
