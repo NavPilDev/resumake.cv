@@ -50,7 +50,7 @@ The "Generate tailored resume" panel (bottom of the results) writes a real `.tex
 - If it doesn't fit, it trims in priority order and recompiles: weakest bullet from the lowest-scoring project → whole lowest-scoring project → weakest bullet from the lowest-scoring job → whole lowest-scoring job. Every trim is reported in the UI. All of this happens under a scratch filename first; your real requested filename is only written once (or if the budget can't be hit, once at the end with whatever fits best), so a page-fit attempt in progress never leaves a broken file under the name you asked for.
 - If `<filename>.tex` already exists in `latex-resumes/`, generating warns instead of silently overwriting — click the button again (it relabels to "Overwrite and Generate") to confirm.
 - LaTeX special characters (`% & # _ { } ~ ^ \`) are escaped via [lib/latexEscape.ts](lib/latexEscape.ts).
-- Known gap: job entries in `experience.yaml` don't have a `location` field yet (only `education` entries do), so the generated resume's job location column renders blank. Add a `location:` field per job if you want that filled in — `toSections` in [lib/scoring.ts](lib/scoring.ts) already reads it if present.
+- Job entries in `experience.yaml` can carry a `location:` field, which fills in the generated resume's job location column (`toSections` in [lib/scoring.ts](lib/scoring.ts) reads it if present).
 
 ## Adjusting keyword matching
 
