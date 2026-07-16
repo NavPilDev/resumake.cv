@@ -1,83 +1,19 @@
 import { termIncluded, tokenize } from "./keywords";
 import { buildBulletHaystack } from "./scoring";
 import { STOPWORDS } from "./stopwords";
-import type { AnalyzeResponse, Bullet, GapKeyword, RankedSection, ScoredBullet, Section } from "./types";
+import type {
+  AnalyzeProgressEvent,
+  AnalyzeResponse,
+  GapKeyword,
+  RankedSection,
+  ScoredBullet,
+  Section,
+} from "./types";
 
 const DEFAULT_HOST = "http://localhost:11434";
 const REQUEST_TIMEOUT_MS = 120_000;
 const SYSTEM_PROMPT =
   "You are a precise resume-tailoring assistant. Respond with strictly valid JSON only — no markdown fences, no commentary, no trailing commas.";
-
-interface ModelBulletPick {
-  id?: unknown;
-  why?: unknown;
-}
-
-interface ModelSectionPick {
-  id?: unknown;
-  bullets?: ModelBulletPick[];
-}
-
-interface RankingResponseShape {
-  sections?: ModelSectionPick[];
-}
-
-interface GapsResponseShape {
-  gaps?: unknown[];
-}
-
-function buildBulletBank(sections: Section[]) {
-  return sections.map((s) => ({
-    id: s.id,
-    label: s.label,
-    bullets: s.bullets.map((b) => ({ id: b.id, text: b.text, tags: b.tags })),
-  }));
-}
-
-function humanizeTag(tag: string): string {
-  return tag.replace(/-/g, " ");
-}
-
-function buildRankingPrompt(sections: Section[], jdText: string, maxBullets: number): string {
-  const bank = buildBulletBank(sections);
-  return `JOB DESCRIPTION:
-"""
-${jdText.trim()}
-"""
-
-BULLET BANK (grouped by resume section, each bullet has an id, its text, and tags):
-${JSON.stringify(bank, null, 2)}
-
-TASK: For every section above (use its exact "id" string), choose up to ${maxBullets} of its own bullets that best match the job description, ordered most to least relevant. Never invent a bullet id or borrow one from a different section. If a section has bullets but none seem relevant, still return its most generally impressive bullets (a resume section shouldn't be left empty) — do not return fewer bullets than available up to the ${maxBullets} limit unless the section itself has fewer than ${maxBullets} bullets. For each chosen bullet, write a "why" field: a specific reason (12 words or fewer) tying it to something in the job description.
-
-Respond with ONLY one JSON object, no markdown fences, no commentary, matching exactly this shape:
-{
-  "sections": [
-    { "id": "<section id>", "bullets": [ { "id": "<bullet id>", "why": "<reason>" } ] }
-  ]
-}`;
-}
-
-function buildGapsPrompt(sections: Section[], jdText: string): string {
-  const allTags = Array.from(
-    new Set(sections.flatMap((s) => s.bullets.flatMap((b) => b.tags.map(humanizeTag))))
-  ).sort();
-
-  return `JOB DESCRIPTION:
-"""
-${jdText.trim()}
-"""
-
-SKILLS/TECHNOLOGIES ALREADY ON THE RESUME (do not list any of these, or close synonyms of them, as a gap):
-${allTags.join(", ")}
-
-TASK: Read the job description above carefully. List up to 10 short phrases (3-6 words each, no trailing ellipsis or punctuation) for skills, technologies, or qualifications that are EXPLICITLY stated in the job description text above but are NOT in the "already on the resume" list. Only use wording that actually appears in the job description — do not invent, assume, or add generic requirements just because they're common for similar roles (e.g. don't add "Agile", "CI/CD", "cloud platforms", or "security testing" unless the job description text above literally mentions them). If the job description only supports fewer than 10 genuine gaps, return fewer — do not pad the list.
-
-Respond with ONLY one JSON object, no markdown fences, no commentary, matching exactly this shape:
-{
-  "gaps": ["<phrase>", "..."]
-}`;
-}
 
 async function callOllamaChat(host: string, model: string, prompt: string): Promise<string> {
   const controller = new AbortController();
@@ -147,67 +83,132 @@ function parseModelJson<T>(raw: string): T {
   }
 }
 
-function hydrateSections(
-  sections: Section[],
-  parsed: RankingResponseShape,
-  maxBullets: number
-): RankedSection[] {
-  const modelSections = Array.isArray(parsed.sections) ? parsed.sections : [];
-
-  return sections.map((section) => {
-    const bulletsById = new Map<string, Bullet>(section.bullets.map((b) => [b.id, b]));
-    const modelSection = modelSections.find((s) => s?.id === section.id);
-    const picks = Array.isArray(modelSection?.bullets) ? modelSection.bullets : [];
-
-    const seen = new Set<string>();
-    const chosen: ScoredBullet[] = [];
-    for (const pick of picks) {
-      if (chosen.length >= maxBullets) break;
-      const id = typeof pick?.id === "string" ? pick.id : undefined;
-      if (!id || seen.has(id)) continue;
-      const bullet = bulletsById.get(id);
-      if (!bullet) continue;
-      seen.add(id);
-      chosen.push({
-        ...bullet,
-        reason: typeof pick.why === "string" ? pick.why : undefined,
-        matchedKeywords: [],
-      });
-    }
-
-    // Model gave nothing usable for this section — fall back to original
-    // order so every non-empty section still shows something.
-    if (chosen.length === 0 && section.bullets.length > 0) {
-      for (const bullet of section.bullets.slice(0, maxBullets)) {
-        chosen.push({ ...bullet, matchedKeywords: [] });
-      }
-    }
-
-    return {
-      id: section.id,
-      kind: section.kind,
-      label: section.label,
-      dates: section.dates,
-      totalBullets: section.bullets.length,
-      shownBullets: chosen,
-    };
-  });
+/** Shared low-level helper: send a prompt, get parsed JSON back. Reused by
+ * section scoring, gap-finding, overview generation, and the improve-bullet
+ * endpoint — each just builds its own prompt and validates its own shape. */
+async function ollamaJsonChat<T>(host: string, model: string, prompt: string): Promise<T> {
+  const raw = await callOllamaChat(host, model, prompt);
+  return parseModelJson<T>(raw);
 }
 
-/** A multi-word gap phrase is "already covered" if every one of its
- * meaningful words shows up somewhere in the bank, even if not as that
- * exact phrase — e.g. "ROS2 and computer vision" when tags already have
- * both "ros2" and "computer-vision" individually. */
+function humanizeTag(tag: string): string {
+  return tag.replace(/-/g, " ");
+}
+
+// ---------------------------------------------------------------------------
+// Per-section bullet scoring
+// ---------------------------------------------------------------------------
+
+interface SectionScorePick {
+  id?: unknown;
+  score?: unknown;
+  reason?: unknown;
+}
+
+interface SectionScoreResponseShape {
+  bullets?: SectionScorePick[];
+}
+
+function buildSectionScoringPrompt(section: Section, jdText: string): string {
+  const bullets = section.bullets.map((b) => ({ id: b.id, text: b.text, tags: b.tags }));
+  return `JOB DESCRIPTION:
+"""
+${jdText.trim()}
+"""
+
+RESUME SECTION: "${section.label}"
+BULLETS:
+${JSON.stringify(bullets, null, 2)}
+
+TASK: Score each bullet's relevance to the job description above on a 0-100 scale (100 = directly demonstrates a core requirement of the role, 0 = completely unrelated). For every bullet, write a "reason": one specific sentence (20 words or fewer). If the score is low, name what's missing or why it doesn't align — don't just say "not relevant" or "low relevance".
+
+Respond with ONLY one JSON object, no markdown fences, no commentary, covering EVERY bullet id exactly once:
+{
+  "bullets": [ { "id": "<bullet id>", "score": <integer 0-100>, "reason": "<reason>" } ]
+}`;
+}
+
+function hydrateSectionFromPicks(
+  section: Section,
+  parsed: SectionScoreResponseShape,
+  maxBullets: number
+): RankedSection {
+  const picks = Array.isArray(parsed.bullets) ? parsed.bullets : [];
+  const byId = new Map<string, SectionScorePick>();
+  for (const p of picks) {
+    if (typeof p?.id === "string") byId.set(p.id, p);
+  }
+
+  const scored: ScoredBullet[] = section.bullets.map((bullet) => {
+    const pick = byId.get(bullet.id);
+    const rawScore = typeof pick?.score === "number" && Number.isFinite(pick.score) ? pick.score : 0;
+    const score = Math.max(0, Math.min(100, Math.round(rawScore)));
+    const reason =
+      typeof pick?.reason === "string" && pick.reason.trim()
+        ? pick.reason.trim()
+        : pick
+          ? undefined
+          : "Ollama did not return a score for this bullet — review manually.";
+    return { ...bullet, score, reason, matchedKeywords: [] };
+  });
+
+  const ranked = [...scored].sort((a, b) => {
+    const diff = b.score - a.score;
+    if (diff !== 0) return diff;
+    if (a.has_metric !== b.has_metric) return a.has_metric ? -1 : 1;
+    return 0;
+  });
+
+  return {
+    id: section.id,
+    kind: section.kind,
+    label: section.label,
+    dates: section.dates,
+    location: section.location,
+    company: section.company,
+    role: section.role,
+    links: section.links,
+    totalBullets: section.bullets.length,
+    shownBullets: ranked.slice(0, Math.max(1, maxBullets)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Gap-finding (unchanged approach from before: tag-list framing + deterministic
+// "already covered" safety net against small-model hallucination)
+// ---------------------------------------------------------------------------
+
+interface GapsResponseShape {
+  gaps?: unknown[];
+}
+
+function buildGapsPrompt(sections: Section[], jdText: string): string {
+  const allTags = Array.from(
+    new Set(sections.flatMap((s) => s.bullets.flatMap((b) => b.tags.map(humanizeTag))))
+  ).sort();
+
+  return `JOB DESCRIPTION:
+"""
+${jdText.trim()}
+"""
+
+SKILLS/TECHNOLOGIES ALREADY ON THE RESUME (do not list any of these, or close synonyms of them, as a gap):
+${allTags.join(", ")}
+
+TASK: Read the job description above carefully. List up to 10 short phrases (3-6 words each, no trailing ellipsis or punctuation) for skills, technologies, or qualifications that are EXPLICITLY stated in the job description text above but are NOT in the "already on the resume" list. Only use wording that actually appears in the job description — do not invent, assume, or add generic requirements just because they're common for similar roles (e.g. don't add "Agile", "CI/CD", "cloud platforms", or "security testing" unless the job description text above literally mentions them). If the job description only supports fewer than 10 genuine gaps, return fewer — do not pad the list.
+
+Respond with ONLY one JSON object, no markdown fences, no commentary, matching exactly this shape:
+{
+  "gaps": ["<phrase>", "..."]
+}`;
+}
+
 function isAlreadyCovered(phrase: string, bulletHaystack: string): boolean {
   const words = tokenize(phrase).filter((w) => w.length >= 3 && !STOPWORDS.has(w));
   if (words.length === 0) return termIncluded(bulletHaystack, phrase);
   return words.every((w) => termIncluded(bulletHaystack, w));
 }
 
-/** Hydrates the model's raw gap list, deduplicates, and — as a deterministic
- * safety net against small-model hallucination — drops anything that
- * actually already appears in the bullet bank (tags or text), regardless of
- * what the model claims. */
 function hydrateGaps(parsed: GapsResponseShape, bulletHaystack: string): GapKeyword[] {
   const gaps = Array.isArray(parsed.gaps) ? parsed.gaps : [];
   const seen = new Set<string>();
@@ -217,7 +218,7 @@ function hydrateGaps(parsed: GapsResponseShape, bulletHaystack: string): GapKeyw
     const keyword = g.trim();
     const key = keyword.toLowerCase();
     if (!keyword || seen.has(key)) continue;
-    if (isAlreadyCovered(keyword, bulletHaystack)) continue; // already covered — not a real gap
+    if (isAlreadyCovered(keyword, bulletHaystack)) continue;
     seen.add(key);
     result.push({ keyword });
     if (result.length >= 15) break;
@@ -225,26 +226,140 @@ function hydrateGaps(parsed: GapsResponseShape, bulletHaystack: string): GapKeyw
   return result;
 }
 
-export async function analyzeWithOllama(
+// ---------------------------------------------------------------------------
+// Overview generation
+// ---------------------------------------------------------------------------
+
+interface OverviewResponseShape {
+  overview?: unknown;
+}
+
+function buildOverviewPrompt(sections: RankedSection[], gaps: GapKeyword[], jdText: string): string {
+  const scoreLines = sections
+    .map((s) => `- ${s.label}: top score ${Math.max(0, ...s.shownBullets.map((b) => b.score))}`)
+    .join("\n");
+  const gapList = gaps.length > 0 ? gaps.map((g) => g.keyword).join(", ") : "none identified";
+
+  return `JOB DESCRIPTION:
+"""
+${jdText.trim()}
+"""
+
+BULLET SCORES BY RESUME SECTION (0-100 relevance to the job description):
+${scoreLines}
+
+IDENTIFIED GAPS: ${gapList}
+
+TASK: Write a short candidate-fit overview (3-5 sentences): overall alignment with the role, the 2-3 strongest matching experiences (name them specifically), and the most important gaps to address in a cover letter or interview. Be direct and specific about actual technologies/skills — no generic filler like "the candidate seems like a good fit". IMPORTANT: the bullet scores measure how well the candidate's EXISTING resume bullets match the job description — they are not a list of the candidate's skills. The IDENTIFIED GAPS list is the authoritative source for what's missing from the resume. Never say the candidate has, is "familiar with", or is "notable for" a skill/technology solely because it's mentioned in the job description — only attribute a skill to the candidate if it's implied by their actual bullet content (reflected in a high score), and only call something a gap if it appears in the IDENTIFIED GAPS list above.
+
+Respond with ONLY one JSON object, no markdown fences, no commentary: { "overview": "<3-5 sentences>" }`;
+}
+
+function hydrateOverview(parsed: OverviewResponseShape): string | undefined {
+  return typeof parsed.overview === "string" && parsed.overview.trim()
+    ? parsed.overview.trim()
+    : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration: streams progress events, then a final result event
+// ---------------------------------------------------------------------------
+
+export async function* analyzeWithOllamaStream(
   sections: Section[],
   jdText: string,
   maxBullets: number,
   options: { model: string; host?: string }
-): Promise<AnalyzeResponse> {
+): AsyncGenerator<AnalyzeProgressEvent, void, void> {
   const host = (options.host || DEFAULT_HOST).replace(/\/+$/, "");
+  const model = options.model;
 
-  const [rankingRaw, gapsRaw] = await Promise.all([
-    callOllamaChat(host, options.model, buildRankingPrompt(sections, jdText, maxBullets)),
-    callOllamaChat(host, options.model, buildGapsPrompt(sections, jdText)),
-  ]);
+  const rankedSections: RankedSection[] = [];
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    yield { type: "progress", stage: "scoring", current: i + 1, total: sections.length, label: section.label };
 
-  const rankingParsed = parseModelJson<RankingResponseShape>(rankingRaw);
-  const gapsParsed = parseModelJson<GapsResponseShape>(gapsRaw);
+    let parsed: SectionScoreResponseShape;
+    try {
+      parsed = await ollamaJsonChat<SectionScoreResponseShape>(
+        host,
+        model,
+        buildSectionScoringPrompt(section, jdText)
+      );
+    } catch (err) {
+      // One section's failure shouldn't sink the whole analysis — fall back
+      // to zero-scored bullets (still shown, in original order) and surface
+      // the error via each bullet's reason so it's visible in the UI.
+      const message = err instanceof Error ? err.message : String(err);
+      parsed = {
+        bullets: section.bullets.map((b) => ({ id: b.id, score: 0, reason: `Scoring failed: ${message}` })),
+      };
+    }
+    rankedSections.push(hydrateSectionFromPicks(section, parsed, maxBullets));
+  }
+
+  const warnings: string[] = [];
+
+  yield { type: "progress", stage: "gaps" };
   const bulletHaystack = buildBulletHaystack(sections);
+  let gaps: GapKeyword[] = [];
+  try {
+    const gapsParsed = await ollamaJsonChat<GapsResponseShape>(host, model, buildGapsPrompt(sections, jdText));
+    gaps = hydrateGaps(gapsParsed, bulletHaystack);
+  } catch (err) {
+    warnings.push(
+      `Skill-gap detection failed (${err instanceof Error ? err.message : String(err)}) — the empty list below may not mean full coverage.`
+    );
+  }
 
-  return {
+  yield { type: "progress", stage: "overview" };
+  let overview: string | undefined;
+  try {
+    const overviewParsed = await ollamaJsonChat<OverviewResponseShape>(
+      host,
+      model,
+      buildOverviewPrompt(rankedSections, gaps, jdText)
+    );
+    overview = hydrateOverview(overviewParsed);
+  } catch (err) {
+    warnings.push(`Overview generation failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const result: AnalyzeResponse = {
     mode: "ollama",
-    sections: hydrateSections(sections, rankingParsed, maxBullets),
-    gaps: hydrateGaps(gapsParsed, bulletHaystack),
+    sections: rankedSections,
+    gaps,
+    overview,
+    warnings: warnings.length > 0 ? warnings : undefined,
   };
+  yield { type: "result", data: result };
+}
+
+/** Standalone helper for the improve-bullet endpoint. */
+export async function improveWithOllama(
+  bulletText: string,
+  tags: string[],
+  jdText: string,
+  options: { model: string; host?: string }
+): Promise<string> {
+  const host = (options.host || DEFAULT_HOST).replace(/\/+$/, "");
+  const prompt = `JOB DESCRIPTION:
+"""
+${jdText.trim()}
+"""
+
+ORIGINAL RESUME BULLET:
+"${bulletText}"
+Tags: ${tags.join(", ") || "none"}
+
+TASK: Rewrite the bullet to better align with the job description above. Keep it ONE sentence, in resume-bullet style (past tense, action-verb led). Do NOT invent skills, tools, technologies, or metrics that aren't implied by the original bullet — only rephrase, reorder, and emphasize what's already true. If the original has no reasonable connection to the job description, make only light wording improvements rather than forcing an unrelated connection.
+
+Respond with ONLY one JSON object, no markdown fences, no commentary: { "improvedText": "<rewritten bullet>" }`;
+
+  const parsed = await ollamaJsonChat<{ improvedText?: unknown }>(host, options.model, prompt);
+  const improved = typeof parsed.improvedText === "string" ? parsed.improvedText.trim() : "";
+  if (!improved) {
+    throw new Error("Ollama did not return an improved bullet — try again.");
+  }
+  return improved;
 }

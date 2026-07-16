@@ -1,7 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import type { AnalyzeMode, AnalyzeResponse } from "@/lib/types";
+import BulletCard from "@/app/components/BulletCard";
+import type { AnalyzeMode, AnalyzeProgressEvent, AnalyzeResponse } from "@/lib/types";
+
+function stageLabel(stage: "scoring" | "gaps" | "overview" | undefined): string {
+  switch (stage) {
+    case "scoring":
+      return "Scoring bullets against the job description…";
+    case "gaps":
+      return "Identifying skill gaps…";
+    case "overview":
+      return "Writing analysis overview…";
+    default:
+      return "Working…";
+  }
+}
 
 export default function Home() {
   const [jdText, setJdText] = useState("");
@@ -12,6 +26,18 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [progress, setProgress] = useState<Extract<AnalyzeProgressEvent, { type: "progress" }> | null>(
+    null
+  );
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+
+  function getDisplayText(bulletId: string, originalText: string): string {
+    return overrides[bulletId] ?? originalText;
+  }
+
+  function handleSaveEdit(bulletId: string, newText: string) {
+    setOverrides((prev) => ({ ...prev, [bulletId]: newText }));
+  }
 
   async function handleAnalyze() {
     if (!jdText.trim()) {
@@ -20,28 +46,71 @@ export default function Home() {
     }
     setLoading(true);
     setError(null);
+    setResult(null);
+    setProgress(null);
+
     try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jdText,
-          maxBullets,
-          mode,
-          ollamaModel: mode === "ollama" ? ollamaModel : undefined,
-          ollamaHost: mode === "ollama" && ollamaHost.trim() ? ollamaHost.trim() : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error ?? `Request failed (${res.status})`);
+      if (mode === "ollama") {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jdText,
+            maxBullets,
+            mode,
+            ollamaModel,
+            ollamaHost: ollamaHost.trim() || undefined,
+          }),
+        });
+
+        if (!res.ok || !res.body) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error ?? `Request failed (${res.status})`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let newlineIndex;
+          while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, newlineIndex).trim();
+            buffer = buffer.slice(newlineIndex + 1);
+            if (!line) continue;
+
+            const event = JSON.parse(line) as AnalyzeProgressEvent;
+            if (event.type === "progress") {
+              setProgress(event);
+            } else if (event.type === "result") {
+              setResult(event.data);
+            } else if (event.type === "error") {
+              throw new Error(event.message);
+            }
+          }
+        }
+      } else {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jdText, maxBullets, mode }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error ?? `Request failed (${res.status})`);
+        }
+        setResult(data as AnalyzeResponse);
       }
-      setResult(data as AnalyzeResponse);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setResult(null);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -101,7 +170,7 @@ export default function Home() {
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               {mode === "keyword"
                 ? "Scores bullets by tag/word overlap with the JD — no dependencies, runs instantly."
-                : "Sends the JD and your bullet bank to a local Ollama model for judgment-based ranking and gap analysis. Requires `ollama serve` running with the model already pulled, and can take anywhere from several seconds to a couple minutes depending on your hardware."}
+                : "Sends the JD and your bullet bank to a local Ollama model, section by section, for judgment-based scoring, gap analysis, and an overview. Requires `ollama serve` running with the model already pulled, and can take anywhere from several seconds to a couple minutes depending on your hardware."}
             </p>
           </fieldset>
 
@@ -171,102 +240,121 @@ export default function Home() {
             </button>
           </div>
 
+          {loading && mode === "ollama" && (
+            <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                {stageLabel(progress?.stage)}
+              </p>
+              {progress?.stage === "scoring" && progress.total ? (
+                <>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                    <div
+                      className="h-full bg-zinc-900 transition-all dark:bg-zinc-100"
+                      style={{ width: `${((progress.current ?? 0) / progress.total) * 100}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    Section {progress.current} of {progress.total}
+                    {progress.label ? ` — ${progress.label}` : ""}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  This step covers the whole bullet bank at once, so there is no sub-progress — hang tight.
+                </p>
+              )}
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </section>
 
         {result && (
-          <section className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
-            <div className="flex flex-col gap-6">
-              {result.sections.map((section) => (
-                <div
-                  key={section.id}
-                  className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950"
-                >
-                  <div className="mb-3 flex items-baseline justify-between gap-2">
-                    <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
-                      {section.label}
-                    </h2>
-                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {section.dates}
-                    </span>
+          <>
+            {result.warnings && result.warnings.length > 0 && (
+              <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                  Some steps had trouble:
+                </p>
+                <ul className="mt-1 list-inside list-disc text-sm text-amber-800 dark:text-amber-300">
+                  {result.warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {result.overview && (
+              <section className="rounded-lg border border-violet-200 bg-violet-50 p-5 dark:border-violet-800 dark:bg-violet-950/30">
+                <h2 className="mb-1 font-semibold text-violet-900 dark:text-violet-200">
+                  Analysis overview
+                </h2>
+                <p className="text-sm text-violet-950 dark:text-violet-100">{result.overview}</p>
+              </section>
+            )}
+
+            <section className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
+              <div className="flex flex-col gap-6">
+                {result.sections.map((section) => (
+                  <div
+                    key={section.id}
+                    className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950"
+                  >
+                    <div className="mb-3 flex items-baseline justify-between gap-2">
+                      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                        {section.label}
+                      </h2>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {section.dates}
+                      </span>
+                    </div>
+                    <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                      Showing top {section.shownBullets.length} of {section.totalBullets} bullets
+                    </p>
+                    <ul className="flex flex-col gap-3">
+                      {section.shownBullets.map((bullet) => (
+                        <BulletCard
+                          key={bullet.id}
+                          bullet={bullet}
+                          displayText={getDisplayText(bullet.id, bullet.text)}
+                          jdText={jdText}
+                          ollamaModel={ollamaModel}
+                          ollamaHost={ollamaHost}
+                          onSaveEdit={handleSaveEdit}
+                          onAcceptImprovement={handleSaveEdit}
+                        />
+                      ))}
+                    </ul>
                   </div>
-                  <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-                    Showing top {section.shownBullets.length} of {section.totalBullets} bullets
+                ))}
+              </div>
+
+              <aside className="h-fit rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+                <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">Skill gaps</h2>
+                <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                  JD keywords with no match anywhere in your bullet bank. Consider addressing these
+                  in your cover letter or interview prep.
+                </p>
+                {result.gaps.length === 0 ? (
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    No gaps found — the JD is well covered by your bullet bank.
                   </p>
-                  <ul className="flex flex-col gap-3">
-                    {section.shownBullets.map((bullet) => (
+                ) : (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {result.gaps.map((g) => (
                       <li
-                        key={bullet.id}
-                        className="rounded-md border border-zinc-100 p-3 dark:border-zinc-800"
+                        key={g.keyword}
+                        className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                        title={g.frequency ? `mentioned ${g.frequency}x in the JD` : "flagged by Ollama"}
                       >
-                        <div className="mb-1 flex items-center gap-2">
-                          {bullet.score !== undefined && (
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                                bullet.score > 0
-                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                                  : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                              }`}
-                            >
-                              score {bullet.score}
-                            </span>
-                          )}
-                          {bullet.has_metric && (
-                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                              has metric
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-zinc-800 dark:text-zinc-200">{bullet.text}</p>
-                        {bullet.reason && (
-                          <p className="mt-1.5 text-xs italic text-zinc-500 dark:text-zinc-400">
-                            {bullet.reason}
-                          </p>
-                        )}
-                        {bullet.matchedKeywords && bullet.matchedKeywords.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {bullet.matchedKeywords.map((kw) => (
-                              <span
-                                key={kw}
-                                className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-                              >
-                                {kw}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        {g.keyword}
                       </li>
                     ))}
                   </ul>
-                </div>
-              ))}
-            </div>
-
-            <aside className="h-fit rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-              <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">Skill gaps</h2>
-              <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-                JD keywords with no match anywhere in your bullet bank. Consider addressing these
-                in your cover letter or interview prep.
-              </p>
-              {result.gaps.length === 0 ? (
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  No gaps found — the JD is well covered by your bullet bank.
-                </p>
-              ) : (
-                <ul className="flex flex-wrap gap-1.5">
-                  {result.gaps.map((g) => (
-                    <li
-                      key={g.keyword}
-                      className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300"
-                      title={g.frequency ? `mentioned ${g.frequency}x in the JD` : "flagged by Ollama"}
-                    >
-                      {g.keyword}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </aside>
-          </section>
+                )}
+              </aside>
+            </section>
+          </>
         )}
       </main>
     </div>

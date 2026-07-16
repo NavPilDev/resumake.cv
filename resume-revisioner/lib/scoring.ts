@@ -15,6 +15,9 @@ export function toSections(data: ExperienceData): Section[] {
     kind: "job",
     label: `${job.company} — ${job.role}`,
     dates: job.dates,
+    location: job.location,
+    company: job.company,
+    role: job.role,
     bullets: job.bullets,
   }));
 
@@ -23,6 +26,7 @@ export function toSections(data: ExperienceData): Section[] {
     kind: "project",
     label: project.name,
     dates: project.dates,
+    links: project.links,
     bullets: project.bullets,
   }));
 
@@ -41,7 +45,12 @@ function significantTextWords(text: string): string[] {
   );
 }
 
-function scoreBullet(bullet: Bullet, paddedJD: string): ScoredBullet {
+interface RawScoredBullet extends Bullet {
+  rawScore: number;
+  matchedKeywords: string[];
+}
+
+function scoreBulletRaw(bullet: Bullet, paddedJD: string): RawScoredBullet {
   const matchedTags = bullet.tags.filter((t) => termIncluded(paddedJD, t));
 
   // Skip text words already implied by a matched tag (e.g. don't surface
@@ -51,10 +60,10 @@ function scoreBullet(bullet: Bullet, paddedJD: string): ScoredBullet {
     (w) => !tagWordSet.has(w) && termIncluded(paddedJD, w)
   );
 
-  const score = matchedTags.length * 2 + matchedTextWords.length;
+  const rawScore = matchedTags.length * 2 + matchedTextWords.length;
   const matchedKeywords = Array.from(new Set([...matchedTags, ...matchedTextWords]));
 
-  return { ...bullet, score, matchedKeywords };
+  return { ...bullet, rawScore, matchedKeywords };
 }
 
 export function rankSections(
@@ -64,10 +73,25 @@ export function rankSections(
 ): RankedSection[] {
   const paddedJD = pad(normalizeForMatch(jdText));
 
-  return sections.map((section) => {
-    const scored = section.bullets.map((b) => scoreBullet(b, paddedJD));
+  const scoredBySection = sections.map((section) => ({
+    section,
+    bullets: section.bullets.map((b) => scoreBulletRaw(b, paddedJD)),
+  }));
+
+  // Normalize against the best-matching bullet across the WHOLE bank (not
+  // per-section) so a "70" in one job means the same relative strength as a
+  // "70" in another — keeps scores comparable across sections, and gives
+  // Ollama mode's 0-100 scale a directly comparable keyword-mode counterpart.
+  const maxRaw = Math.max(1, ...scoredBySection.flatMap((s) => s.bullets.map((b) => b.rawScore)));
+
+  return scoredBySection.map(({ section, bullets }) => {
+    const scored: ScoredBullet[] = bullets.map(({ rawScore, ...b }) => ({
+      ...b,
+      score: Math.round((rawScore / maxRaw) * 100),
+    }));
+
     const ranked = [...scored].sort((a, b) => {
-      const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
+      const scoreDiff = b.score - a.score;
       if (scoreDiff !== 0) return scoreDiff;
       if (a.has_metric !== b.has_metric) return a.has_metric ? -1 : 1;
       return 0; // stable sort keeps original bullet order as final tiebreak
@@ -78,6 +102,10 @@ export function rankSections(
       kind: section.kind,
       label: section.label,
       dates: section.dates,
+      location: section.location,
+      company: section.company,
+      role: section.role,
+      links: section.links,
       totalBullets: section.bullets.length,
       shownBullets: ranked.slice(0, Math.max(1, maxBullets)),
     };

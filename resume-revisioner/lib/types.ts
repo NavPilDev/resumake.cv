@@ -10,6 +10,7 @@ export interface JobEntry {
   role: string;
   dates: string;
   date_confidence: string;
+  location?: string;
   bullets: Bullet[];
 }
 
@@ -26,6 +27,25 @@ export interface ProjectEntry {
   bullets: Bullet[];
 }
 
+export interface EducationEntry {
+  institution: string;
+  credential: string;
+  dates: string;
+  date_confidence: string;
+  location?: string;
+  details?: string[];
+  links?: ProjectLink[];
+}
+
+export interface TechnicalSkillEntry {
+  skill: string;
+  source: string;
+}
+
+export interface TechnicalSkills {
+  [category: string]: TechnicalSkillEntry[];
+}
+
 export interface ExperienceData {
   meta: {
     name: string;
@@ -36,6 +56,8 @@ export interface ExperienceData {
   };
   jobs: JobEntry[];
   projects: ProjectEntry[];
+  education: EducationEntry[];
+  technical_skills: TechnicalSkills;
 }
 
 export interface Section {
@@ -44,14 +66,24 @@ export interface Section {
   label: string;
   dates: string;
   bullets: Bullet[];
+  /** Job-only, for the resume subheading's right-aligned location column. */
+  location?: string;
+  /** Split out from `label` for jobs so the LaTeX generator can lay out
+   * company/role in separate table cells instead of re-parsing the string. */
+  company?: string;
+  role?: string;
+  /** Project-only. */
+  links?: ProjectLink[];
 }
 
 export interface ScoredBullet extends Bullet {
-  /** Keyword-mode overlap score. Absent in Ollama mode (rank order matters, not the number). */
-  score?: number;
+  /** 0-100 relevance score, always present in both modes. Keyword mode
+   * normalizes its raw overlap count against the best bullet in the run;
+   * Ollama mode asks the model directly for a 0-100 judgment. */
+  score: number;
   /** Keyword-mode matched terms. Empty/absent in Ollama mode. */
   matchedKeywords?: string[];
-  /** Ollama mode's one-line justification for picking this bullet. Absent in keyword mode. */
+  /** Ollama mode's justification for the score — more specific for low scores. Absent in keyword mode. */
   reason?: string;
 }
 
@@ -60,6 +92,10 @@ export interface RankedSection {
   kind: "job" | "project";
   label: string;
   dates: string;
+  location?: string;
+  company?: string;
+  role?: string;
+  links?: ProjectLink[];
   totalBullets: number;
   shownBullets: ScoredBullet[];
 }
@@ -76,6 +112,10 @@ export interface AnalyzeResponse {
   mode: AnalyzeMode;
   sections: RankedSection[];
   gaps: GapKeyword[];
+  /** Ollama-only short fit/strengths/gaps summary paragraph. */
+  overview?: string;
+  /** Non-fatal pipeline step failures (e.g. the gaps or overview call errored) — surfaced so a failure isn't mistaken for a clean result. */
+  warnings?: string[];
 }
 
 export interface AnalyzeRequest {
@@ -84,4 +124,22 @@ export interface AnalyzeRequest {
   mode?: AnalyzeMode;
   ollamaModel?: string;
   ollamaHost?: string;
+}
+
+/** NDJSON progress events streamed by /api/analyze while mode=ollama. */
+export type AnalyzeProgressEvent =
+  | { type: "progress"; stage: "scoring" | "gaps" | "overview"; current?: number; total?: number; label?: string }
+  | { type: "result"; data: AnalyzeResponse }
+  | { type: "error"; message: string };
+
+export interface ImproveRequest {
+  bulletText: string;
+  tags: string[];
+  jdText: string;
+  ollamaModel?: string;
+  ollamaHost?: string;
+}
+
+export interface ImproveResponse {
+  improvedText: string;
 }

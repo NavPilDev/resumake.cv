@@ -1,7 +1,7 @@
 import { loadExperience } from "@/lib/loadExperience";
-import { analyzeWithOllama } from "@/lib/ollama";
+import { analyzeWithOllamaStream } from "@/lib/ollama";
 import { findGaps, rankSections, toSections } from "@/lib/scoring";
-import type { AnalyzeRequest, AnalyzeResponse } from "@/lib/types";
+import type { AnalyzeProgressEvent, AnalyzeRequest, AnalyzeResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -44,18 +44,33 @@ export async function POST(request: Request) {
       ? body.ollamaHost.trim()
       : undefined;
 
-    try {
-      const payload = await analyzeWithOllama(sections, jdText, maxBullets, {
-        model: ollamaModel,
-        host: ollamaHost,
-      });
-      return Response.json(payload);
-    } catch (err) {
-      return Response.json(
-        { error: err instanceof Error ? err.message : "Ollama analysis failed." },
-        { status: 502 }
-      );
-    }
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (event: AnalyzeProgressEvent) => {
+          controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+        };
+        try {
+          for await (const event of analyzeWithOllamaStream(sections, jdText, maxBullets, {
+            model: ollamaModel,
+            host: ollamaHost,
+          })) {
+            send(event);
+          }
+        } catch (err) {
+          send({ type: "error", message: err instanceof Error ? err.message : "Ollama analysis failed." });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    });
   }
 
   const ranked = rankSections(sections, jdText, maxBullets);
