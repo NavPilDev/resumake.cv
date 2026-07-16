@@ -6,6 +6,7 @@ import type {
   AnalyzeMode,
   AnalyzeProgressEvent,
   AnalyzeResponse,
+  GenerateProgressEvent,
   GenerateResumeResponse,
   GenerateResumeSectionInput,
 } from "@/lib/types";
@@ -18,6 +19,19 @@ function stageLabel(stage: "scoring" | "gaps" | "overview" | undefined): string 
       return "Identifying skill gaps…";
     case "overview":
       return "Writing analysis overview…";
+    default:
+      return "Working…";
+  }
+}
+
+function genStageLabel(stage: "compiling" | "trimming" | "finalizing" | undefined): string {
+  switch (stage) {
+    case "compiling":
+      return "Compiling the resume…";
+    case "trimming":
+      return "Trimming to fit the page limit…";
+    case "finalizing":
+      return "Writing the final resume…";
     default:
       return "Working…";
   }
@@ -45,6 +59,10 @@ export default function Home() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [needsOverwriteConfirm, setNeedsOverwriteConfirm] = useState(false);
   const [generateResult, setGenerateResult] = useState<GenerateResumeResponse | null>(null);
+  const [genProgress, setGenProgress] = useState<
+    Extract<GenerateProgressEvent, { type: "progress" }> | null
+  >(null);
+  const [showGenNotes, setShowGenNotes] = useState(false);
 
   function getDisplayText(bulletId: string, originalText: string): string {
     return overrides[bulletId] ?? originalText;
@@ -59,6 +77,8 @@ export default function Home() {
     setGenerating(true);
     setGenerateError(null);
     setGenerateResult(null);
+    setGenProgress(null);
+    setShowGenNotes(false);
 
     const sections: GenerateResumeSectionInput[] = result.sections.map((section) => ({
       id: section.id,
@@ -89,21 +109,46 @@ export default function Home() {
           confirmOverwrite,
         }),
       });
-      const data = await res.json();
-      if (res.status === 409 && data?.needsConfirmation) {
-        setNeedsOverwriteConfirm(true);
-        setGenerateError(data.error);
-        return;
-      }
-      if (!res.ok) {
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
         throw new Error(data?.error ?? `Request failed (${res.status})`);
       }
-      setNeedsOverwriteConfirm(false);
-      setGenerateResult(data as GenerateResumeResponse);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (!line) continue;
+
+          const event = JSON.parse(line) as GenerateProgressEvent;
+          if (event.type === "progress") {
+            setGenProgress(event);
+          } else if (event.type === "needs_confirmation") {
+            setNeedsOverwriteConfirm(true);
+            setGenerateError(event.message);
+          } else if (event.type === "result") {
+            setNeedsOverwriteConfirm(false);
+            setGenerateResult(event.data);
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+      }
     } catch (err) {
       setGenerateError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setGenerating(false);
+      setGenProgress(null);
     }
   }
 
@@ -397,7 +442,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
+              <aside className="sidebar-scroll flex flex-col gap-6 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
                 <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
                   <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">Skill gaps</h2>
                   <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
@@ -504,6 +549,18 @@ export default function Home() {
                     </button>
                   </div>
 
+                  {generating && (
+                    <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+                      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                        {genStageLabel(genProgress?.stage)}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        {genProgress?.label ??
+                          "Running latexmk — this can take a few compile passes if trimming is needed."}
+                      </p>
+                    </div>
+                  )}
+
                   {generateError && (
                     <p className="mt-2 text-sm text-red-600 dark:text-red-400">{generateError}</p>
                   )}
@@ -520,19 +577,35 @@ export default function Home() {
                           </>
                         )}
                       </p>
-                      {generateResult.trimmedItems.length > 0 && (
-                        <ul className="mt-2 list-inside list-disc text-xs text-emerald-800 dark:text-emerald-300">
-                          {generateResult.trimmedItems.map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {generateResult.warnings && generateResult.warnings.length > 0 && (
-                        <ul className="mt-2 list-inside list-disc text-xs text-amber-700 dark:text-amber-400">
-                          {generateResult.warnings.map((w, i) => (
-                            <li key={i}>{w}</li>
-                          ))}
-                        </ul>
+                      {(generateResult.trimmedItems.length > 0 ||
+                        (generateResult.warnings && generateResult.warnings.length > 0)) && (
+                        <>
+                          <button
+                            onClick={() => setShowGenNotes((v) => !v)}
+                            className="mt-2 text-xs font-medium text-emerald-900 underline underline-offset-2 hover:text-emerald-700 dark:text-emerald-200 dark:hover:text-emerald-100"
+                          >
+                            {showGenNotes ? "Hide generation notes" : "View generation notes"} (
+                            {generateResult.trimmedItems.length + (generateResult.warnings?.length ?? 0)})
+                          </button>
+                          {showGenNotes && (
+                            <>
+                              {generateResult.trimmedItems.length > 0 && (
+                                <ul className="mt-2 list-inside list-disc text-xs text-emerald-800 dark:text-emerald-300">
+                                  {generateResult.trimmedItems.map((item, i) => (
+                                    <li key={i}>{item}</li>
+                                  ))}
+                                </ul>
+                              )}
+                              {generateResult.warnings && generateResult.warnings.length > 0 && (
+                                <ul className="mt-2 list-inside list-disc text-xs text-amber-700 dark:text-amber-400">
+                                  {generateResult.warnings.map((w, i) => (
+                                    <li key={i}>{w}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </>
+                          )}
+                        </>
                       )}
                     </div>
                   )}

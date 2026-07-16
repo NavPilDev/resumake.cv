@@ -175,3 +175,15 @@ export interface ImproveRequest {
 export interface ImproveResponse {
   improvedText: string;
 }
+
+/** NDJSON progress events streamed by /api/generate-resume. */
+export type GenerateProgressEvent =
+  | {
+      type: "progress";
+      stage: "compiling" | "trimming" | "finalizing";
+      attempt?: number;
+      label?: string;
+    }
+  | { type: "needs_confirmation"; message: string }
+  | { type: "result"; data: GenerateResumeResponse }
+  | { type: "error"; message: string };
