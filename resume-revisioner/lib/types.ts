@@ -132,6 +132,38 @@ export type AnalyzeProgressEvent =
   | { type: "result"; data: AnalyzeResponse }
   | { type: "error"; message: string };
 
+export interface GenerateResumeSectionInput {
+  id: string;
+  kind: "job" | "project";
+  company?: string;
+  role?: string;
+  location?: string;
+  /** Project name (kind="project"); ignored for jobs, which use company/role instead. */
+  label: string;
+  dates: string;
+  links?: ProjectLink[];
+  /** Final bullet text (post-override), best-first, already trimmed to the analysis's max-bullets-per-role setting. */
+  bullets: { id: string; text: string; score: number }[];
+}
+
+export interface GenerateResumeRequest {
+  filename: string;
+  maxJobs: number;
+  maxProjects: number;
+  maxPages: number;
+  sections: GenerateResumeSectionInput[];
+  /** Set after the user has seen a "this file already exists" 409 and chosen to proceed anyway. */
+  confirmOverwrite?: boolean;
+}
+
+export interface GenerateResumeResponse {
+  texPath: string;
+  pdfPath?: string;
+  pagesUsed: number | null;
+  trimmedItems: string[];
+  warnings?: string[];
+}
+
 export interface ImproveRequest {
   bulletText: string;
   tags: string[];

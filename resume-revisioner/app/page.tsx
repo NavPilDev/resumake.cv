@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import BulletCard from "@/app/components/BulletCard";
-import type { AnalyzeMode, AnalyzeProgressEvent, AnalyzeResponse } from "@/lib/types";
+import type {
+  AnalyzeMode,
+  AnalyzeProgressEvent,
+  AnalyzeResponse,
+  GenerateResumeResponse,
+  GenerateResumeSectionInput,
+} from "@/lib/types";
 
 function stageLabel(stage: "scoring" | "gaps" | "overview" | undefined): string {
   switch (stage) {
@@ -31,12 +37,74 @@ export default function Home() {
   );
   const [overrides, setOverrides] = useState<Record<string, string>>({});
 
+  const [genFilename, setGenFilename] = useState("tailored-resume");
+  const [genMaxJobs, setGenMaxJobs] = useState(10);
+  const [genMaxProjects, setGenMaxProjects] = useState(4);
+  const [genMaxPages, setGenMaxPages] = useState(1);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [needsOverwriteConfirm, setNeedsOverwriteConfirm] = useState(false);
+  const [generateResult, setGenerateResult] = useState<GenerateResumeResponse | null>(null);
+
   function getDisplayText(bulletId: string, originalText: string): string {
     return overrides[bulletId] ?? originalText;
   }
 
   function handleSaveEdit(bulletId: string, newText: string) {
     setOverrides((prev) => ({ ...prev, [bulletId]: newText }));
+  }
+
+  async function handleGenerate(confirmOverwrite: boolean) {
+    if (!result) return;
+    setGenerating(true);
+    setGenerateError(null);
+    setGenerateResult(null);
+
+    const sections: GenerateResumeSectionInput[] = result.sections.map((section) => ({
+      id: section.id,
+      kind: section.kind,
+      company: section.company,
+      role: section.role,
+      location: section.location,
+      label: section.label,
+      dates: section.dates,
+      links: section.links,
+      bullets: section.shownBullets.map((b) => ({
+        id: b.id,
+        text: getDisplayText(b.id, b.text),
+        score: b.score,
+      })),
+    }));
+
+    try {
+      const res = await fetch("/api/generate-resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: genFilename,
+          maxJobs: genMaxJobs,
+          maxProjects: genMaxProjects,
+          maxPages: genMaxPages,
+          sections,
+          confirmOverwrite,
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 409 && data?.needsConfirmation) {
+        setNeedsOverwriteConfirm(true);
+        setGenerateError(data.error);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Request failed (${res.status})`);
+      }
+      setNeedsOverwriteConfirm(false);
+      setGenerateResult(data as GenerateResumeResponse);
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function handleAnalyze() {
@@ -353,6 +421,119 @@ export default function Home() {
                   </ul>
                 )}
               </aside>
+            </section>
+
+            <section className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+              <h2 className="mb-1 font-semibold text-zinc-900 dark:text-zinc-50">
+                Generate tailored resume
+              </h2>
+              <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                Writes a new .tex file (and compiles a PDF) into{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                  latex-resumes/
+                </code>
+                , using master-resume.tex&apos;s template with your top-scoring jobs and projects
+                above (including any edits/improvements you&apos;ve made). It compiles repeatedly
+                and trims the weakest bullets, then whole projects, then whole jobs, until it fits
+                your page limit — education and technical skills are copied as-is from{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                  experience.yaml
+                </code>{" "}
+                and aren&apos;t trimmed.
+              </p>
+
+              <div className="flex flex-wrap items-end gap-4">
+                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                  Filename
+                  <input
+                    type="text"
+                    value={genFilename}
+                    onChange={(e) => {
+                      setGenFilename(e.target.value);
+                      setNeedsOverwriteConfirm(false);
+                    }}
+                    className="w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                  Max jobs
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={genMaxJobs}
+                    onChange={(e) => setGenMaxJobs(Number(e.target.value) || 0)}
+                    className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                  Max projects
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={genMaxProjects}
+                    onChange={(e) => setGenMaxProjects(Number(e.target.value) || 0)}
+                    className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                  Max pages
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={genMaxPages}
+                    onChange={(e) => setGenMaxPages(Number(e.target.value) || 1)}
+                    className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                </label>
+
+                <button
+                  onClick={() => handleGenerate(needsOverwriteConfirm)}
+                  disabled={generating}
+                  className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                >
+                  {generating
+                    ? "Compiling…"
+                    : needsOverwriteConfirm
+                      ? "Overwrite and Generate"
+                      : "Generate Resume"}
+                </button>
+              </div>
+
+              {generateError && (
+                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{generateError}</p>
+              )}
+
+              {generateResult && (
+                <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  <p>
+                    Wrote <code className="font-mono">{generateResult.texPath}</code> —{" "}
+                    {generateResult.pagesUsed ?? "unknown"} page(s)
+                    {generateResult.pdfPath && (
+                      <>
+                        {" "}
+                        · PDF at <code className="font-mono">{generateResult.pdfPath}</code>
+                      </>
+                    )}
+                  </p>
+                  {generateResult.trimmedItems.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc text-xs text-emerald-800 dark:text-emerald-300">
+                      {generateResult.trimmedItems.map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {generateResult.warnings && generateResult.warnings.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc text-xs text-amber-700 dark:text-amber-400">
+                      {generateResult.warnings.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </section>
           </>
         )}
