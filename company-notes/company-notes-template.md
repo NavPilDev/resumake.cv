@@ -50,12 +50,12 @@ I'm researching {Company Name} ahead of an application/interview for the {Role T
 
 6. How my experience maps to their needs: Cross-reference my resume against the job description and what you've learned about the company. Identify the 3-4 strongest matches between my past experience/projects and their stated needs or likely pain points, and suggest how I might phrase these connections in an interview.
 
-My resume:
-{paste resume text here}
-
-Job description (if available):
-{paste job description here}
+My resume is attached:
+{attach resume}
 
 Company name: {Company Name}
 Role: {Role Title}
+Job description (if available):
+{paste job description here}
+
 ```
