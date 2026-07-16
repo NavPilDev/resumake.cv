@@ -1,0 +1,138 @@
+% =====================================================================
+% PROJECT ONE-PAGER TEMPLATE
+% Matches the visual style of latex-resumes/resume.tex
+%
+% HOW TO REUSE PER PROJECT:
+%   1. Copy this file and rename it (e.g. project-routerunner.tex)
+%   2. Fill in every [BRACKETED PLACEHOLDER] below
+%   3. Keep bullets short -- this is a single page, no more than
+%      ~4 Approach bullets and 1-3 Result bullets will comfortably fit
+%   4. Delete the \href / icon lines you don't need (e.g. no demo link)
+% =====================================================================
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\usepackage{tikz}
+\input{glyphtounicode}
+\usepackage[margin=1.4cm]{geometry}
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.15in}
+\addtolength{\textwidth}{0.3in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting -- identical to resume.tex
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large\bfseries
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that the generated pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands (reused from resume.tex)
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{0pt}}
+  }
+}
+
+\renewcommand\labelitemi{$\vcenter{\hbox{\tiny$\bullet$}}$}
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeItemListStart}{\begin{itemize}[leftmargin=0.18in]}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+% Tech stack tag -- small rounded chip, grayscale to match the
+% monochrome resume aesthetic (no color usage beyond black/gray)
+\newcommand{\techtag}[1]{%
+  \tikz[baseline=(t.base)]{
+    \node[draw=black, rounded corners=2pt, inner sep=3pt, fill=black!5]
+      (t) {\small #1};
+  }%
+}
+
+% Result callout box -- thin black border, mirrors the resume's
+% \titlerule for visual consistency
+\newcommand{\resultbox}[1]{%
+  \noindent
+  \fcolorbox{black}{black!4}{%
+    \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule}
+      \small #1
+    \end{minipage}%
+  }%
+}
+
+\begin{document}
+
+%----------HEADER----------
+\begin{center}
+    {\Large \scshape [PROJECT NAME]} \\[2mm]
+    \normalsize \textbf{[YOUR ROLE]} $\bullet$ [DATE RANGE, e.g. Jan 2026 -- Mar 2026] \\[1.5mm]
+    \footnotesize
+    {\faGithub\ \underline{\href{[CODE URL]}{[code/demo link text]}}} ~~
+    {\faBriefcase\ \underline{\href{[LIVE DEMO URL]}{[live demo link text]}}}
+\end{center}
+\vspace{-6pt}
+
+%-----------PROBLEM-----------
+\section{Problem}
+\vspace{2pt}
+\noindent\small
+[2-3 sentence problem statement. Describe the pain point, who it affected,
+and why solving it mattered. Keep this tight -- it sets up the Approach
+and Result sections below.]
+
+\vspace{6pt}
+
+%-----------APPROACH-----------
+\section{Approach}
+    \resumeItemListStart
+        \resumeItem{[Bullet describing a key design/technical decision and why you made it.]}
+        \resumeItem{[Bullet describing an implementation detail, architecture choice, or tool integration.]}
+        \resumeItem{[Bullet describing how you validated, tested, or iterated on the solution.]}
+        \resumeItem{[Optional fourth bullet -- collaboration, constraints, or trade-offs handled.]}
+    \resumeItemListEnd
+
+%-----------RESULT-----------
+\section{Result}
+\vspace{4pt}
+\resultbox{\textbf{[Headline outcome, quantified where possible -- e.g. ``Reduced page load time by \textbf{40\%} and onboarded \textbf{500+} users in the first month.'']} \\[2pt]
+[Optional second sentence with a secondary metric or qualitative impact.]}
+\vspace{4pt}
+
+%-----------TECH STACK-----------
+\section{Tech Stack}
+\vspace{6pt}
+\noindent
+\techtag{[Language/Framework]} \hspace{4pt}
+\techtag{[Language/Framework]} \hspace{4pt}
+\techtag{[Tool/Platform]} \hspace{4pt}
+\techtag{[Tool/Platform]} \hspace{4pt}
+\techtag{[API/Service]} \hspace{4pt}
+\techtag{[API/Service]}
+
+\end{document}
