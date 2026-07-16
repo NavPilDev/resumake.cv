@@ -3,3 +3,6 @@ latex-resumes/out/*.synctex.gz
 
 latex-covers/build/
 latex-covers/out/*.synctex.gz
+
+latex-references/build/
+latex-references/out/*.synctex.gz
