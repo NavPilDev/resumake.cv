@@ -67,7 +67,8 @@ export function rankSections(
   return sections.map((section) => {
     const scored = section.bullets.map((b) => scoreBullet(b, paddedJD));
     const ranked = [...scored].sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
+      const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
       if (a.has_metric !== b.has_metric) return a.has_metric ? -1 : 1;
       return 0; // stable sort keeps original bullet order as final tiebreak
     });
@@ -83,15 +84,21 @@ export function rankSections(
   });
 }
 
-/** JD keywords/phrases with no coverage anywhere in the bullet bank
- * (tags or bullet text) — candidates for a cover letter or interview prep. */
-export function findGaps(sections: Section[], jdText: string, limit = 20): GapKeyword[] {
+/** Padded, normalized blob of every tag + bullet text in the bank, for
+ * whole-word/phrase "is this already covered?" checks via termIncluded. */
+export function buildBulletHaystack(sections: Section[]): string {
   const allBullets = sections.flatMap((s) => s.bullets);
-  const bulletHaystack = pad(
+  return pad(
     normalizeForMatch(
       allBullets.map((b) => `${b.tags.join(" ")} ${b.text}`).join(" ")
     )
   );
+}
+
+/** JD keywords/phrases with no coverage anywhere in the bullet bank
+ * (tags or bullet text) — candidates for a cover letter or interview prep. */
+export function findGaps(sections: Section[], jdText: string, limit = 20): GapKeyword[] {
+  const bulletHaystack = buildBulletHaystack(sections);
 
   const candidates = extractCandidatePhrases(jdText)
     .filter((c) => !termIncluded(bulletHaystack, c.phrase))

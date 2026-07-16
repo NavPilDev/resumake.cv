@@ -47,8 +47,12 @@ export interface Section {
 }
 
 export interface ScoredBullet extends Bullet {
-  score: number;
-  matchedKeywords: string[];
+  /** Keyword-mode overlap score. Absent in Ollama mode (rank order matters, not the number). */
+  score?: number;
+  /** Keyword-mode matched terms. Empty/absent in Ollama mode. */
+  matchedKeywords?: string[];
+  /** Ollama mode's one-line justification for picking this bullet. Absent in keyword mode. */
+  reason?: string;
 }
 
 export interface RankedSection {
@@ -62,10 +66,14 @@ export interface RankedSection {
 
 export interface GapKeyword {
   keyword: string;
-  frequency: number;
+  /** Occurrence count in the JD. Absent for Ollama-sourced gaps. */
+  frequency?: number;
 }
 
+export type AnalyzeMode = "keyword" | "ollama";
+
 export interface AnalyzeResponse {
+  mode: AnalyzeMode;
   sections: RankedSection[];
   gaps: GapKeyword[];
 }
@@ -73,4 +81,7 @@ export interface AnalyzeResponse {
 export interface AnalyzeRequest {
   jdText: string;
   maxBullets: number;
+  mode?: AnalyzeMode;
+  ollamaModel?: string;
+  ollamaHost?: string;
 }

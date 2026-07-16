@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { AnalyzeResponse } from "@/lib/types";
+import type { AnalyzeMode, AnalyzeResponse } from "@/lib/types";
 
 export default function Home() {
   const [jdText, setJdText] = useState("");
   const [maxBullets, setMaxBullets] = useState(4);
+  const [mode, setMode] = useState<AnalyzeMode>("keyword");
+  const [ollamaModel, setOllamaModel] = useState("llama3.2:3b");
+  const [ollamaHost, setOllamaHost] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
@@ -21,7 +24,13 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jdText, maxBullets }),
+        body: JSON.stringify({
+          jdText,
+          maxBullets,
+          mode,
+          ollamaModel: mode === "ollama" ? ollamaModel : undefined,
+          ollamaHost: mode === "ollama" && ollamaHost.trim() ? ollamaHost.trim() : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -65,25 +74,100 @@ export default function Home() {
             onChange={(e) => setJdText(e.target.value)}
           />
 
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              Analysis method
+            </legend>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="radio"
+                  name="mode"
+                  checked={mode === "keyword"}
+                  onChange={() => setMode("keyword")}
+                />
+                Keyword overlap (local, instant)
+              </label>
+              <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="radio"
+                  name="mode"
+                  checked={mode === "ollama"}
+                  onChange={() => setMode("ollama")}
+                />
+                Ollama (local LLM)
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {mode === "keyword"
+                ? "Scores bullets by tag/word overlap with the JD — no dependencies, runs instantly."
+                : "Sends the JD and your bullet bank to a local Ollama model for judgment-based ranking and gap analysis. Requires `ollama serve` running with the model already pulled, and can take anywhere from several seconds to a couple minutes depending on your hardware."}
+            </p>
+          </fieldset>
+
+          {mode === "ollama" && (
+            <div className="flex flex-wrap items-end gap-4 rounded-md border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+              <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                Model
+                <input
+                  type="text"
+                  value={ollamaModel}
+                  onChange={(e) => setOllamaModel(e.target.value)}
+                  placeholder="llama3.2:3b"
+                  className="w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                Ollama host (optional)
+                <input
+                  type="text"
+                  value={ollamaHost}
+                  onChange={(e) => setOllamaHost(e.target.value)}
+                  placeholder="http://localhost:11434"
+                  className="w-56 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </label>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Must already be pulled — check with{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                  ollama list
+                </code>
+                .
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-              Max bullets per role
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={maxBullets}
-                onChange={(e) => setMaxBullets(Number(e.target.value) || 1)}
-                className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              />
+            <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+              <span className="flex items-center gap-2">
+                Max bullets per role
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={maxBullets}
+                  onChange={(e) => setMaxBullets(Number(e.target.value) || 1)}
+                  className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </span>
+              <span className="max-w-sm text-xs text-zinc-500 dark:text-zinc-400">
+                The most bullets to show for any one job or project. Each section in{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                  experience.yaml
+                </code>{" "}
+                (e.g. a specific internship, or a hackathon project) gets ranked on its own and
+                trimmed down to this many — so a role with 6 bullets only shows its top 4 (say),
+                keeping the recommendation resume-length instead of listing every bullet ever
+                written for that role.
+              </span>
             </label>
 
             <button
               onClick={handleAnalyze}
               disabled={loading}
-              className="ml-auto rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              className="ml-auto self-start rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
-              {loading ? "Analyzing…" : "Analyze"}
+              {loading ? (mode === "ollama" ? "Asking Ollama…" : "Analyzing…") : "Analyze"}
             </button>
           </div>
 
@@ -116,15 +200,17 @@ export default function Home() {
                         className="rounded-md border border-zinc-100 p-3 dark:border-zinc-800"
                       >
                         <div className="mb-1 flex items-center gap-2">
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                              bullet.score > 0
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                                : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                            }`}
-                          >
-                            score {bullet.score}
-                          </span>
+                          {bullet.score !== undefined && (
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                                bullet.score > 0
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                  : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                              }`}
+                            >
+                              score {bullet.score}
+                            </span>
+                          )}
                           {bullet.has_metric && (
                             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                               has metric
@@ -132,7 +218,12 @@ export default function Home() {
                           )}
                         </div>
                         <p className="text-sm text-zinc-800 dark:text-zinc-200">{bullet.text}</p>
-                        {bullet.matchedKeywords.length > 0 && (
+                        {bullet.reason && (
+                          <p className="mt-1.5 text-xs italic text-zinc-500 dark:text-zinc-400">
+                            {bullet.reason}
+                          </p>
+                        )}
+                        {bullet.matchedKeywords && bullet.matchedKeywords.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
                             {bullet.matchedKeywords.map((kw) => (
                               <span
@@ -167,7 +258,7 @@ export default function Home() {
                     <li
                       key={g.keyword}
                       className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300"
-                      title={`mentioned ${g.frequency}x in the JD`}
+                      title={g.frequency ? `mentioned ${g.frequency}x in the JD` : "flagged by Ollama"}
                     >
                       {g.keyword}
                     </li>
