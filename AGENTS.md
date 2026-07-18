@@ -12,7 +12,7 @@ Everything here is converging into **Resumeak** — a single local program, powe
 
 ## Shared data
 
-- [`experience.yaml`](experience.yaml) is the single source of truth for resume content (jobs, projects, education, skills). `resume-revisioner` reads it fresh on every request — don't cache it across requests.
+- [`experience.yaml`](experience.yaml) is the single source of truth for resume content (jobs, projects, education, skills). `resume-revisioner` reads it fresh on every request — don't cache it across requests. Ignore the /saved directory. This just holds backups and saved resumes used for testing.
 - Generated LaTeX output (tailored resumes, etc.) is written into `latex-resumes/`, compiled via `latexmk` using `latex-resumes/.latexmkrc`'s `build`/`out` dirs.
 
 ## Sub-project rules
