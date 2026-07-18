@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import AnimatedFileUpload from "@/app/components/ui/animated-file-upload";
 import CertificationRow from "@/app/components/CertificationRow";
 import EducationEntryRow from "@/app/components/EducationEntryRow";
 import JobEntryRow from "@/app/components/JobEntryRow";
@@ -9,11 +10,13 @@ import type {
   Bullet,
   Certification,
   EducationEntry,
+  ExtractedExperienceFragment,
   ExtractExperienceResponse,
   JobEntry,
   Meta,
   ProjectEntry,
   ProjectLink,
+  SocialLink,
   TechnicalSkills,
 } from "@/lib/types";
 
@@ -67,6 +70,21 @@ function normalizeTechnicalSkills(value: unknown): TechnicalSkills {
   return result;
 }
 
+/** Unions technical skills found across multiple attachments, deduping by
+ * lowercased skill name within each category (last source wins on `source` tag). */
+function mergeTechnicalSkillsAcrossSources(sources: TechnicalSkills[]): TechnicalSkills {
+  const merged: TechnicalSkills = {};
+  for (const skills of sources) {
+    for (const [category, entries] of Object.entries(skills)) {
+      const existing = merged[category] ?? [];
+      const seen = new Set(existing.map((e) => e.skill.toLowerCase()));
+      const additions = entries.filter((e) => !seen.has(e.skill.toLowerCase()));
+      merged[category] = [...existing, ...additions];
+    }
+  }
+  return merged;
+}
+
 function normalizeBullets(bullets: Partial<Bullet>[] | undefined): Bullet[] {
   if (!Array.isArray(bullets)) return [];
   return bullets.map((b) => ({
@@ -106,125 +124,262 @@ function normalizeMeta(meta: Partial<Meta> | undefined): Partial<Meta> {
   return cleaned;
 }
 
+function buildJobEntry(j: NonNullable<ExtractedExperienceFragment["jobs"]>[number]): JobEntry {
+  return {
+    company: j.company ?? "",
+    role: j.role ?? "",
+    dates: j.dates ?? "",
+    start_date: j.start_date,
+    end_date: j.end_date,
+    date_confidence: j.date_confidence ?? "unknown",
+    location: j.location,
+    work_mode: j.work_mode,
+    hours_per_week: normalizeNumber(j.hours_per_week),
+    pay_plan: j.pay_plan,
+    pay_series: j.pay_series,
+    pay_grade: j.pay_grade,
+    included: true,
+    bullets: normalizeBullets(j.bullets),
+  };
+}
+
+function buildProjectEntry(p: NonNullable<ExtractedExperienceFragment["projects"]>[number]): ProjectEntry {
+  return {
+    name: p.name ?? "",
+    dates: p.dates ?? "",
+    date_confidence: p.date_confidence ?? "unknown",
+    links: normalizeLinks(p.links),
+    included: true,
+    bullets: normalizeBullets(p.bullets),
+  };
+}
+
+function buildEducationEntry(e: NonNullable<ExtractedExperienceFragment["education"]>[number]): EducationEntry {
+  return {
+    institution: e.institution ?? "",
+    credential: e.credential ?? "",
+    degree_level: e.degree_level,
+    major: e.major,
+    dates: e.dates ?? "",
+    graduation_date: e.graduation_date,
+    gpa: e.gpa,
+    date_confidence: e.date_confidence ?? "unknown",
+    location: e.location,
+    details: normalizeStringArray(e.details),
+    links: normalizeLinks(e.links),
+    included: true,
+  };
+}
+
+function buildCertification(c: NonNullable<ExtractedExperienceFragment["certifications"]>[number]): Certification {
+  return {
+    id: makeId("cert"),
+    name: c.name ?? "",
+    issuer: c.issuer,
+    date: c.date,
+    expiration_date: c.expiration_date,
+    credential_id: c.credential_id,
+    links: normalizeLinks(c.links),
+    included: true,
+  };
+}
+
+/** A draft entry plus which attachment it was extracted from, so the review
+ * UI can show attribution when multiple files contribute overlapping content. */
+interface Sourced<T> {
+  entry: T;
+  source: string;
+}
+
+const META_TEXT_FIELDS = ["name", "email", "phone", "linkedin", "github", "website"] as const;
+type MetaTextField = (typeof META_TEXT_FIELDS)[number];
+
+interface MetaFieldConflict {
+  field: MetaTextField;
+  candidates: { value: string; source: string }[];
+}
+
+/** Merges per-source contact info. A field with exactly one distinct value
+ * across sources (however many agree) is filled in directly; a field with
+ * disagreeing values becomes a conflict the user must pick between — pre-set
+ * to the first candidate so there's always a sane default. */
+function mergeMetaAcrossSources(
+  results: { label: string; meta: Partial<Meta> }[]
+): { meta: Partial<Meta>; conflicts: MetaFieldConflict[] } {
+  const merged: Partial<Meta> = {};
+  const conflicts: MetaFieldConflict[] = [];
+
+  for (const field of META_TEXT_FIELDS) {
+    const candidates: { value: string; source: string }[] = [];
+    for (const r of results) {
+      const value = r.meta[field];
+      if (typeof value === "string" && value.trim()) candidates.push({ value: value.trim(), source: r.label });
+    }
+    const distinct = Array.from(new Set(candidates.map((c) => c.value)));
+    if (distinct.length === 1) {
+      (merged as Record<string, string>)[field] = distinct[0];
+    } else if (distinct.length > 1) {
+      conflicts.push({ field, candidates });
+      (merged as Record<string, string>)[field] = candidates[0].value;
+    }
+  }
+
+  const seen = new Set<string>();
+  const socialLinks: SocialLink[] = [];
+  for (const r of results) {
+    for (const link of r.meta.social_links ?? []) {
+      const key = `${link.platform.trim().toLowerCase()}|${link.url.trim().toLowerCase()}`;
+      if (link.platform?.trim() && link.url?.trim() && !seen.has(key)) {
+        seen.add(key);
+        socialLinks.push(link);
+      }
+    }
+  }
+  if (socialLinks.length > 0) merged.social_links = socialLinks;
+
+  return { meta: merged, conflicts };
+}
+
 interface PendingReview {
   meta: Partial<Meta>;
-  jobs: JobEntry[];
-  projects: ProjectEntry[];
-  education: EducationEntry[];
-  certifications: Certification[];
+  metaConflicts: MetaFieldConflict[];
+  jobs: Sourced<JobEntry>[];
+  projects: Sourced<ProjectEntry>[];
+  education: Sourced<EducationEntry>[];
+  certifications: Sourced<Certification>[];
   technical_skills: TechnicalSkills;
 }
+
+type ListField = "jobs" | "projects" | "education" | "certifications";
 
 const inputClass =
   "w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
 
+const META_FIELD_LABELS: Record<MetaTextField, string> = {
+  name: "name",
+  email: "email",
+  phone: "phone",
+  linkedin: "linkedin",
+  github: "github",
+  website: "website",
+};
+
 export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccept }: ExperienceUploadPanelProps) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [dropzoneKey, setDropzoneKey] = useState(0);
   const [pastedText, setPastedText] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const [currentSourceLabel, setCurrentSourceLabel] = useState<string | null>(null);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractWarnings, setExtractWarnings] = useState<string[]>([]);
+  const [sourceErrors, setSourceErrors] = useState<{ label: string; message: string }[]>([]);
   const [pending, setPending] = useState<PendingReview | null>(null);
 
   async function handleExtract() {
-    if (!file && !pastedText.trim()) {
-      setExtractError("Choose a file or paste some text first.");
+    const sources: { file?: File; text?: string; label: string }[] = [
+      ...files.map((f) => ({ file: f, label: f.name })),
+      ...(pastedText.trim() ? [{ text: pastedText.trim(), label: "Pasted text" }] : []),
+    ];
+
+    if (sources.length === 0) {
+      setExtractError("Add at least one file or paste some text first.");
       return;
     }
+
     setExtracting(true);
     setExtractError(null);
     setExtractWarnings([]);
+    setSourceErrors([]);
 
-    try {
-      const form = new FormData();
-      if (file) {
-        form.set("file", file);
-      } else {
-        form.set("text", pastedText.trim());
+    const results: { label: string; fragment: ExtractedExperienceFragment }[] = [];
+    const warnings: string[] = [];
+    const errors: { label: string; message: string }[] = [];
+
+    for (const source of sources) {
+      setCurrentSourceLabel(source.label);
+      try {
+        const form = new FormData();
+        if (source.file) form.set("file", source.file);
+        else if (source.text) form.set("text", source.text);
+        form.set("ollamaModel", ollamaModel);
+        if (ollamaHost.trim()) form.set("ollamaHost", ollamaHost.trim());
+
+        const res = await fetch("/api/experience/extract", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
+
+        const payload = data as ExtractExperienceResponse;
+        results.push({ label: source.label, fragment: payload.fragment ?? {} });
+        if (payload.warnings) warnings.push(...payload.warnings);
+      } catch (err) {
+        errors.push({ label: source.label, message: err instanceof Error ? err.message : "Extraction failed." });
       }
-      form.set("ollamaModel", ollamaModel);
-      if (ollamaHost.trim()) form.set("ollamaHost", ollamaHost.trim());
-
-      const res = await fetch("/api/experience/extract", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
-
-      const payload = data as ExtractExperienceResponse;
-      const fragment = payload.fragment ?? {};
-      const fragmentJobs = Array.isArray(fragment.jobs) ? fragment.jobs : [];
-      const fragmentProjects = Array.isArray(fragment.projects) ? fragment.projects : [];
-      const fragmentEducation = Array.isArray(fragment.education) ? fragment.education : [];
-      const fragmentCertifications = Array.isArray(fragment.certifications) ? fragment.certifications : [];
-      setExtractWarnings(payload.warnings ?? []);
-      setPending({
-        meta: normalizeMeta(fragment.meta),
-        jobs: fragmentJobs.map((j) => ({
-          company: j.company ?? "",
-          role: j.role ?? "",
-          dates: j.dates ?? "",
-          start_date: j.start_date,
-          end_date: j.end_date,
-          date_confidence: j.date_confidence ?? "unknown",
-          location: j.location,
-          work_mode: j.work_mode,
-          hours_per_week: normalizeNumber(j.hours_per_week),
-          pay_plan: j.pay_plan,
-          pay_series: j.pay_series,
-          pay_grade: j.pay_grade,
-          included: true,
-          bullets: normalizeBullets(j.bullets),
-        })),
-        projects: fragmentProjects.map((p) => ({
-          name: p.name ?? "",
-          dates: p.dates ?? "",
-          date_confidence: p.date_confidence ?? "unknown",
-          links: normalizeLinks(p.links),
-          included: true,
-          bullets: normalizeBullets(p.bullets),
-        })),
-        education: fragmentEducation.map((e) => ({
-          institution: e.institution ?? "",
-          credential: e.credential ?? "",
-          degree_level: e.degree_level,
-          major: e.major,
-          dates: e.dates ?? "",
-          graduation_date: e.graduation_date,
-          gpa: e.gpa,
-          date_confidence: e.date_confidence ?? "unknown",
-          location: e.location,
-          details: normalizeStringArray(e.details),
-          links: normalizeLinks(e.links),
-          included: true,
-        })),
-        certifications: fragmentCertifications.map((c) => ({
-          id: makeId("cert"),
-          name: c.name ?? "",
-          issuer: c.issuer,
-          date: c.date,
-          expiration_date: c.expiration_date,
-          credential_id: c.credential_id,
-          links: normalizeLinks(c.links),
-          included: true,
-        })),
-        technical_skills: normalizeTechnicalSkills(fragment.technical_skills),
-      });
-    } catch (err) {
-      setExtractError(err instanceof Error ? err.message : "Extraction failed.");
-    } finally {
-      setExtracting(false);
     }
+
+    setCurrentSourceLabel(null);
+    setExtractWarnings(warnings);
+    setSourceErrors(errors);
+
+    if (results.length === 0) {
+      setExtracting(false);
+      return;
+    }
+
+    const { meta, conflicts } = mergeMetaAcrossSources(
+      results.map((r) => ({ label: r.label, meta: normalizeMeta(r.fragment.meta) }))
+    );
+
+    const jobs = results.flatMap((r) =>
+      (Array.isArray(r.fragment.jobs) ? r.fragment.jobs : []).map((j) => ({ entry: buildJobEntry(j), source: r.label }))
+    );
+    const projects = results.flatMap((r) =>
+      (Array.isArray(r.fragment.projects) ? r.fragment.projects : []).map((p) => ({
+        entry: buildProjectEntry(p),
+        source: r.label,
+      }))
+    );
+    const education = results.flatMap((r) =>
+      (Array.isArray(r.fragment.education) ? r.fragment.education : []).map((e) => ({
+        entry: buildEducationEntry(e),
+        source: r.label,
+      }))
+    );
+    const certifications = results.flatMap((r) =>
+      (Array.isArray(r.fragment.certifications) ? r.fragment.certifications : []).map((c) => ({
+        entry: buildCertification(c),
+        source: r.label,
+      }))
+    );
+    const technical_skills = mergeTechnicalSkillsAcrossSources(
+      results.map((r) => normalizeTechnicalSkills(r.fragment.technical_skills))
+    );
+
+    setPending({ meta, metaConflicts: conflicts, jobs, projects, education, certifications, technical_skills });
+    setExtracting(false);
   }
 
-  function updatePending<K extends keyof PendingReview>(key: K, value: PendingReview[K]) {
-    setPending((prev) => (prev ? { ...prev, [key]: value } : prev));
+  function updateMetaField(field: MetaTextField, value: string) {
+    setPending((prev) => (prev ? { ...prev, meta: { ...prev.meta, [field]: value } } : prev));
+  }
+
+  function updateList<K extends ListField>(key: K, next: PendingReview[K]) {
+    setPending((prev) => (prev ? { ...prev, [key]: next } : prev));
   }
 
   function acceptAll() {
     if (!pending) return;
-    onAccept(pending);
+    onAccept({
+      meta: pending.meta,
+      jobs: pending.jobs.map((j) => j.entry),
+      projects: pending.projects.map((p) => p.entry),
+      education: pending.education.map((e) => e.entry),
+      certifications: pending.certifications.map((c) => c.entry),
+      technical_skills: pending.technical_skills,
+    });
     setPending(null);
-    setFile(null);
+    setFiles([]);
     setPastedText("");
+    setDropzoneKey((k) => k + 1);
   }
 
   function discardAll() {
@@ -242,36 +397,26 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Import from a file or pasted text</h2>
+      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Import from files or pasted text</h2>
       <p className="text-xs text-zinc-500 dark:text-zinc-400">
-        Upload a resume PDF, a Markdown/JSON export, or paste text describing your experience. A local
-        Ollama model extracts structured entries for you to review — nothing is added until you accept it
-        below.
+        Upload one or more resume PDFs, Markdown/JSON exports, or paste text describing your experience. A
+        local Ollama model extracts structured entries for you to review — nothing is added until you
+        accept it below.
       </p>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-        <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-          File (PDF, Markdown, or JSON)
-          <input
-            type="file"
-            accept=".pdf,.md,.txt,.json"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
-              if (e.target.files?.[0]) setPastedText("");
-            }}
-            className="text-sm"
-          />
-        </label>
-      </div>
+      <AnimatedFileUpload
+        key={dropzoneKey}
+        accept=".pdf,.md,.txt,.json"
+        multiple
+        maxSize={15 * 1024 * 1024}
+        onFilesSelected={setFiles}
+      />
 
       <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-        Or paste text
+        Or paste additional text (optional — treated as one more attachment)
         <textarea
           value={pastedText}
-          onChange={(e) => {
-            setPastedText(e.target.value);
-            if (e.target.value) setFile(null);
-          }}
+          onChange={(e) => setPastedText(e.target.value)}
           placeholder="Paste a resume, a bio, or a description of a role you worked…"
           className="h-28 w-full resize-y rounded-md border border-zinc-300 bg-white p-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
         />
@@ -282,10 +427,19 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
         disabled={extracting}
         className="self-start rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
-        {extracting ? "Asking Ollama…" : "Extract"}
+        {extracting ? `Asking Ollama… ${currentSourceLabel ? `(${currentSourceLabel})` : ""}` : "Extract"}
       </button>
 
       {extractError && <p className="text-sm text-red-600 dark:text-red-400">{extractError}</p>}
+      {sourceErrors.length > 0 && (
+        <ul className="list-inside list-disc text-sm text-red-600 dark:text-red-400">
+          {sourceErrors.map((e, i) => (
+            <li key={i}>
+              <span className="font-medium">{e.label}:</span> {e.message}
+            </li>
+          ))}
+        </ul>
+      )}
       {extractWarnings.length > 0 && (
         <ul className="list-inside list-disc text-xs text-amber-700 dark:text-amber-400">
           {extractWarnings.map((w, i) => (
@@ -324,100 +478,139 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
             </p>
           )}
 
+          {pending.metaConflicts.length > 0 && (
+            <div className="flex flex-col gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
+              <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                Your attachments disagree on {pending.metaConflicts.length === 1 ? "this field" : "these fields"} —
+                pick which value to keep.
+              </p>
+              {pending.metaConflicts.map((conflict) => (
+                <div key={conflict.field} className="flex flex-col gap-1.5">
+                  <p className="text-xs font-semibold capitalize text-amber-900 dark:text-amber-200">
+                    {META_FIELD_LABELS[conflict.field]}
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {conflict.candidates.map((candidate, i) => (
+                      <label
+                        key={`${candidate.source}-${i}`}
+                        className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300"
+                      >
+                        <input
+                          type="radio"
+                          name={`meta-conflict-${conflict.field}`}
+                          checked={pending.meta[conflict.field] === candidate.value}
+                          onChange={() => updateMetaField(conflict.field, candidate.value)}
+                        />
+                        <span className="font-medium text-zinc-900 dark:text-zinc-100">{candidate.value}</span>
+                        <span className="text-zinc-500 dark:text-zinc-400">— from {candidate.source}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {Object.keys(pending.meta).length > 0 && (
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-violet-800 dark:text-violet-300">Contact info found</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {(["name", "email", "phone", "linkedin", "github", "website"] as (keyof Meta)[])
-                  .filter((key) => pending.meta[key] !== undefined)
-                  .map((key) => (
-                    <label key={key} className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                      {key}
-                      <input
-                        className={inputClass}
-                        value={(pending.meta[key] as string) ?? ""}
-                        onChange={(e) => updatePending("meta", { ...pending.meta, [key]: e.target.value })}
-                      />
-                    </label>
-                  ))}
+                {META_TEXT_FIELDS.filter((key) => pending.meta[key] !== undefined).map((key) => (
+                  <label key={key} className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+                    {key}
+                    <input
+                      className={inputClass}
+                      value={(pending.meta[key] as string) ?? ""}
+                      onChange={(e) => updateMetaField(key, e.target.value)}
+                    />
+                  </label>
+                ))}
               </div>
             </div>
           )}
 
-          {pending.jobs.map((job, i) => (
-            <JobEntryRow
-              key={i}
-              job={job}
-              onChange={(next) =>
-                updatePending(
-                  "jobs",
-                  pending.jobs.map((j, ji) => (ji === i ? next : j))
-                )
-              }
-              onRemove={() =>
-                updatePending(
-                  "jobs",
-                  pending.jobs.filter((_, ji) => ji !== i)
-                )
-              }
-            />
+          {pending.jobs.map((item, i) => (
+            <div key={i} className="flex flex-col gap-1">
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
+              <JobEntryRow
+                job={item.entry}
+                onChange={(next) =>
+                  updateList(
+                    "jobs",
+                    pending.jobs.map((j, ji) => (ji === i ? { ...j, entry: next } : j))
+                  )
+                }
+                onRemove={() =>
+                  updateList(
+                    "jobs",
+                    pending.jobs.filter((_, ji) => ji !== i)
+                  )
+                }
+              />
+            </div>
           ))}
 
-          {pending.projects.map((project, i) => (
-            <ProjectEntryRow
-              key={i}
-              project={project}
-              onChange={(next) =>
-                updatePending(
-                  "projects",
-                  pending.projects.map((p, pi) => (pi === i ? next : p))
-                )
-              }
-              onRemove={() =>
-                updatePending(
-                  "projects",
-                  pending.projects.filter((_, pi) => pi !== i)
-                )
-              }
-            />
+          {pending.projects.map((item, i) => (
+            <div key={i} className="flex flex-col gap-1">
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
+              <ProjectEntryRow
+                project={item.entry}
+                onChange={(next) =>
+                  updateList(
+                    "projects",
+                    pending.projects.map((p, pi) => (pi === i ? { ...p, entry: next } : p))
+                  )
+                }
+                onRemove={() =>
+                  updateList(
+                    "projects",
+                    pending.projects.filter((_, pi) => pi !== i)
+                  )
+                }
+              />
+            </div>
           ))}
 
-          {pending.education.map((education, i) => (
-            <EducationEntryRow
-              key={i}
-              education={education}
-              onChange={(next) =>
-                updatePending(
-                  "education",
-                  pending.education.map((e, ei) => (ei === i ? next : e))
-                )
-              }
-              onRemove={() =>
-                updatePending(
-                  "education",
-                  pending.education.filter((_, ei) => ei !== i)
-                )
-              }
-            />
+          {pending.education.map((item, i) => (
+            <div key={i} className="flex flex-col gap-1">
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
+              <EducationEntryRow
+                education={item.entry}
+                onChange={(next) =>
+                  updateList(
+                    "education",
+                    pending.education.map((e, ei) => (ei === i ? { ...e, entry: next } : e))
+                  )
+                }
+                onRemove={() =>
+                  updateList(
+                    "education",
+                    pending.education.filter((_, ei) => ei !== i)
+                  )
+                }
+              />
+            </div>
           ))}
 
-          {pending.certifications.map((cert, i) => (
-            <CertificationRow
-              key={cert.id}
-              certification={cert}
-              onChange={(next) =>
-                updatePending(
-                  "certifications",
-                  pending.certifications.map((c, ci) => (ci === i ? next : c))
-                )
-              }
-              onRemove={() =>
-                updatePending(
-                  "certifications",
-                  pending.certifications.filter((_, ci) => ci !== i)
-                )
-              }
-            />
+          {pending.certifications.map((item, i) => (
+            <div key={item.entry.id} className="flex flex-col gap-1">
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
+              <CertificationRow
+                certification={item.entry}
+                onChange={(next) =>
+                  updateList(
+                    "certifications",
+                    pending.certifications.map((c, ci) => (ci === i ? { ...c, entry: next } : c))
+                  )
+                }
+                onRemove={() =>
+                  updateList(
+                    "certifications",
+                    pending.certifications.filter((_, ci) => ci !== i)
+                  )
+                }
+              />
+            </div>
           ))}
 
           {Object.keys(pending.technical_skills).length > 0 && (
