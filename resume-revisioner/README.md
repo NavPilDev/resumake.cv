@@ -2,6 +2,8 @@
 
 Local tool for tailoring [`experience.yaml`](../experience.yaml) to a specific job description. Paste in a JD, get your bullet bank scored (0-100), see which JD keywords aren't covered, tweak the results, and generate a tailored `.tex` resume — all without ever writing back to `experience.yaml` until you explicitly export it.
 
+> **Note:** this is also where [Resumeak](../README.md#resumeak) — a planned single local, Ollama-powered program that bundles this JD-tailoring flow, experience-bank editing, application tracking, and company notes into one tool anyone can run — is being built. It hasn't been renamed yet, so it's still `resume-revisioner` in `package.json`, routes, etc. An **"input your experience"** feature (building/editing the `experience.yaml` bullet bank from the app UI, instead of hand-editing YAML) is currently in progress.
+
 ## Run it
 
 ```bash
