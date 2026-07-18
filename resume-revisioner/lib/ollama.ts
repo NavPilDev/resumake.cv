@@ -84,9 +84,11 @@ function parseModelJson<T>(raw: string): T {
 }
 
 /** Shared low-level helper: send a prompt, get parsed JSON back. Reused by
- * section scoring, gap-finding, overview generation, and the improve-bullet
- * endpoint — each just builds its own prompt and validates its own shape. */
-async function ollamaJsonChat<T>(host: string, model: string, prompt: string): Promise<T> {
+ * section scoring, gap-finding, overview generation, the improve-bullet
+ * endpoint, and experience extraction — each just builds its own prompt and
+ * validates its own shape. Exported so lib/experienceExtraction.ts inherits
+ * the same connection-failure/timeout/invalid-JSON error messages. */
+export async function ollamaJsonChat<T>(host: string, model: string, prompt: string): Promise<T> {
   const raw = await callOllamaChat(host, model, prompt);
   return parseModelJson<T>(raw);
 }

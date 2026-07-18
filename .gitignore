@@ -8,3 +8,5 @@ latex-references/build/
 latex-references/out/*.synctex.gz
 latex-case-study/build/
 latex-case-study/out/*.synctex.gz
+saved/
+experience.yaml

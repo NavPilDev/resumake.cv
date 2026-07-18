@@ -83,7 +83,7 @@ export async function* generateResumeStream(
 
       const tex = buildResumeTex({
         meta: experience.meta,
-        education: experience.education ?? [],
+        education: (experience.education ?? []).filter((e) => e.included !== false),
         technicalSkills: experience.technical_skills ?? {},
         jobs: toTemplateInput(jobs),
         projects: toTemplateInput(projects),
@@ -121,7 +121,7 @@ export async function* generateResumeStream(
   // clobbered a real file).
   const finalTex = buildResumeTex({
     meta: experience.meta,
-    education: experience.education ?? [],
+    education: (experience.education ?? []).filter((e) => e.included !== false),
     technicalSkills: experience.technical_skills ?? {},
     jobs: toTemplateInput(jobs),
     projects: toTemplateInput(projects),

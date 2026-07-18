@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import BulletCard from "@/app/components/BulletCard";
+import ExperienceBuilder from "@/app/components/ExperienceBuilder";
 import type {
   AnalyzeMode,
   AnalyzeProgressEvent,
@@ -38,6 +39,7 @@ function genStageLabel(stage: "compiling" | "trimming" | "finalizing" | undefine
 }
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<"tailor" | "experience">("tailor");
   const [jdText, setJdText] = useState("");
   const [maxBullets, setMaxBullets] = useState(4);
   const [mode, setMode] = useState<AnalyzeMode>("keyword");
@@ -235,15 +237,54 @@ export default function Home() {
             Resume Revisioner
           </h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Paste a job description to rank your bullet bank (
-            <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
-              experience.yaml
-            </code>
-            ) by keyword overlap and surface skill gaps. Nothing is written back to your resume —
-            review and copy in the bullets you want.
+            {activeTab === "tailor" ? (
+              <>
+                Paste a job description to rank your bullet bank (
+                <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
+                  experience.yaml
+                </code>
+                ) by keyword overlap and surface skill gaps. Nothing is written back to your resume —
+                review and copy in the bullets you want.
+              </>
+            ) : (
+              <>
+                Build or edit your{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
+                  experience.yaml
+                </code>{" "}
+                bullet bank from uploads, pasted text, or the form below.
+              </>
+            )}
           </p>
+
+          <div className="mt-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+            <button
+              onClick={() => setActiveTab("tailor")}
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === "tailor"
+                  ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              Tailor Resume
+            </button>
+            <button
+              onClick={() => setActiveTab("experience")}
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === "experience"
+                  ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              My Experience
+            </button>
+          </div>
         </header>
 
+        {activeTab === "experience" && <ExperienceBuilder />}
+
+        {activeTab === "tailor" && (
+          <>
         <section className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
           <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200" htmlFor="jd">
             Job description
@@ -612,6 +653,8 @@ export default function Home() {
                 </div>
               </aside>
             </section>
+          </>
+        )}
           </>
         )}
       </main>
