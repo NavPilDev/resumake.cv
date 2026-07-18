@@ -162,7 +162,9 @@ export default function ExperienceBuilder() {
         </section>
       )}
 
-      <ExperienceUploadPanel ollamaModel={ollamaModel} ollamaHost={ollamaHost} onAccept={handleAccept} />
+      <section className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
+        <div className="flex flex-col gap-8">
+          <ExperienceUploadPanel ollamaModel={ollamaModel} ollamaHost={ollamaHost} onAccept={handleAccept} />
 
       <section className={sectionClass}>
         <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Extraction settings</h2>
@@ -415,37 +417,33 @@ export default function ExperienceBuilder() {
               </div>
             </div>
           ))}
+            </div>
+          </section>
         </div>
-      </section>
 
-      <section className="sticky bottom-4 flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-4 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            {dirty ? "You have unsaved changes." : "All changes saved."} Saving writes directly to{" "}
-            <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">experience.yaml</code>{" "}
-            (a timestamped backup is kept alongside it, but hand-written comments in the file won&apos;t
-            survive the first save).
-          </p>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="shrink-0 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-        {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
-        {saveResult && (
-          <p className="text-sm text-emerald-700 dark:text-emerald-400">
-            Saved to <code className="font-mono">{saveResult.path}</code>
-            {saveResult.backupPath && (
-              <>
-                {" "}
-                — previous version backed up to <code className="font-mono">{saveResult.backupPath}</code>
-              </>
+        <aside className="sidebar-scroll flex flex-col gap-6 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          <div className={sectionClass}>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              {dirty ? "You have unsaved changes." : "All changes saved."} Saving writes directly to{" "}
+              <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">experience.yaml</code>{" "}
+              (mid-document comments won&apos;t survive a save — only the leading header comment block is
+              preserved).
+            </p>
+            <button
+              onClick={handleSave}
+              disabled={saving || !dirty}
+              className="self-start rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+            {saveResult && (
+              <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                Saved to <code className="font-mono">{saveResult.path}</code>
+              </p>
             )}
-          </p>
-        )}
+          </div>
+        </aside>
       </section>
     </div>
   );

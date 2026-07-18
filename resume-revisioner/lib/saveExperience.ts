@@ -21,15 +21,35 @@ function extractHeaderComment(raw: string): string {
   return header.length > 0 ? header.join("\n") + "\n\n" : "";
 }
 
-export interface SaveExperienceResult {
-  path: string;
-  backupPath: string | null;
+/** A number, %, or $ in a bullet's text is a decent proxy for "this bullet
+ * states a measurable outcome" — auto-detected at save time rather than
+ * hand-toggled in the editor. */
+function detectHasMetric(text: string): boolean {
+  return /\d/.test(text) || /[%$]/.test(text);
 }
 
-/** Writes `data` to experience.yaml at the repo root, backing up the
- * previous file (if any) to a timestamped `.bak-<ISO time>` copy first —
- * this is the first-ever write path to this hand-curated file, so the
- * backup is a deliberate safety net rather than a full versioning system. */
+function withDetectedMetrics(data: ExperienceData): ExperienceData {
+  return {
+    ...data,
+    jobs: data.jobs.map((job) => ({
+      ...job,
+      bullets: job.bullets.map((b) => ({ ...b, has_metric: detectHasMetric(b.text) })),
+    })),
+    projects: data.projects.map((project) => ({
+      ...project,
+      bullets: project.bullets.map((b) => ({ ...b, has_metric: detectHasMetric(b.text) })),
+    })),
+  };
+}
+
+export interface SaveExperienceResult {
+  path: string;
+}
+
+/** Writes `data` to experience.yaml at the repo root, preserving the file's
+ * leading `#`-comment header block (if any) across the rewrite. This is a
+ * direct overwrite with no backup copy — the source-controlled repo (or your
+ * own external backups) is the safety net for this file, not this function. */
 export function saveExperience(data: ExperienceData): SaveExperienceResult {
   let filePath: string;
   try {
@@ -46,16 +66,12 @@ export function saveExperience(data: ExperienceData): SaveExperienceResult {
   }
 
   let header = "";
-  let backupPath: string | null = null;
   if (fs.existsSync(filePath)) {
-    const existingRaw = fs.readFileSync(filePath, "utf8");
-    header = extractHeaderComment(existingRaw);
-    backupPath = `${filePath}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-    fs.copyFileSync(filePath, backupPath);
+    header = extractHeaderComment(fs.readFileSync(filePath, "utf8"));
   }
 
-  const body = yaml.dump(data, { lineWidth: -1, noRefs: true, sortKeys: false });
+  const body = yaml.dump(withDetectedMetrics(data), { lineWidth: -1, noRefs: true, sortKeys: false });
   fs.writeFileSync(filePath, header + body, "utf8");
 
-  return { path: filePath, backupPath };
+  return { path: filePath };
 }

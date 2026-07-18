@@ -13,6 +13,9 @@ action-verb led, one sentence. Do NOT include "id" on any bullet or
 certification, and do NOT include "included" anywhere — those are assigned
 by the app after the user reviews this, never by you.
 
+For start_date/end_date, if the source only states a month and year (no
+specific day), use day "01" (e.g. "2023-06" -> "2023-06-01").
+
 The field descriptions below (in parentheses) explain what a field MEANS —
 they are not example values. Never copy a description's wording into the
 output. If an array field (details, links, social_links, bullets, etc.) has

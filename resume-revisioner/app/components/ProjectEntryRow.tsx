@@ -104,12 +104,11 @@ export default function ProjectEntryRow({ project, onChange, onRemove }: Project
         </div>
       </div>
 
-      <div>
-        <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-          Bullets — what you built, the skills/tools used, and any measurable impact
-        </p>
-        <BulletEditor bullets={project.bullets} onChange={(bullets) => set("bullets", bullets)} />
-      </div>
+      <BulletEditor
+        bullets={project.bullets}
+        onChange={(bullets) => set("bullets", bullets)}
+        label="Bullets — what you built, the skills/tools used, and any measurable impact"
+      />
     </div>
   );
 }

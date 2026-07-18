@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AnimatedFileUpload from "@/app/components/ui/animated-file-upload";
+import { JobVersionCompareModal, ProjectVersionCompareModal } from "@/app/components/ui/version-compare-modal";
 import CertificationRow from "@/app/components/CertificationRow";
 import EducationEntryRow from "@/app/components/EducationEntryRow";
 import JobEntryRow from "@/app/components/JobEntryRow";
@@ -107,6 +108,22 @@ function normalizeNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const YEAR_MONTH_RE = /^\d{4}-\d{2}$/;
+
+/** JobEntryRow's <input type="date"> requires an exact YYYY-MM-DD string or
+ * silently renders empty — a small local model fed month/year-only source
+ * text often returns just "YYYY-MM", so pad it to the 1st of the month
+ * rather than let the date picker silently fail to show what was found. */
+function normalizeJobDate(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed === "present") return trimmed;
+  if (ISO_DATE_RE.test(trimmed)) return trimmed;
+  if (YEAR_MONTH_RE.test(trimmed)) return `${trimmed}-01`;
+  return undefined;
+}
+
 /** Drops blank fields and placeholder {platform:"",url:""} social-link
  * entries the model sometimes echoes back from the prompt's example shape
  * even when nothing was actually found in the source text. */
@@ -129,8 +146,8 @@ function buildJobEntry(j: NonNullable<ExtractedExperienceFragment["jobs"]>[numbe
     company: j.company ?? "",
     role: j.role ?? "",
     dates: j.dates ?? "",
-    start_date: j.start_date,
-    end_date: j.end_date,
+    start_date: normalizeJobDate(j.start_date),
+    end_date: normalizeJobDate(j.end_date),
     date_confidence: j.date_confidence ?? "unknown",
     location: j.location,
     work_mode: j.work_mode,
@@ -191,6 +208,60 @@ interface Sourced<T> {
   source: string;
 }
 
+/** Two or more versions of what looks like the same job/project, extracted
+ * from different attachments — held back from the normal editable list until
+ * the user picks one via the compare modal. */
+interface EntryGroup<T> {
+  key: string;
+  versions: Sourced<T>[];
+}
+
+function jobDedupKey(job: JobEntry): string {
+  const company = job.company.trim().toLowerCase();
+  const role = job.role.trim().toLowerCase();
+  if (!company && !role) return "";
+  return `${company}|${role}`;
+}
+
+function projectDedupKey(project: ProjectEntry): string {
+  return project.name.trim().toLowerCase();
+}
+
+/** Buckets sourced entries by an exact-match title key. A blank key (e.g. a
+ * job with no company/role extracted) is never grouped — clustering unrelated
+ * blank entries together would be a worse outcome than just listing them
+ * separately. Groups of 1 come back as `resolved` (today's normal rendering);
+ * groups of 2+ come back as `groups`, awaiting a compare-modal decision. */
+function groupBySourceKey<T>(
+  items: Sourced<T>[],
+  keyFn: (entry: T) => string
+): { resolved: Sourced<T>[]; groups: EntryGroup<T>[] } {
+  const byKey = new Map<string, Sourced<T>[]>();
+  const order: string[] = [];
+  const resolved: Sourced<T>[] = [];
+
+  for (const item of items) {
+    const key = keyFn(item.entry);
+    if (!key) {
+      resolved.push(item);
+      continue;
+    }
+    if (!byKey.has(key)) {
+      byKey.set(key, []);
+      order.push(key);
+    }
+    byKey.get(key)!.push(item);
+  }
+
+  const groups: EntryGroup<T>[] = [];
+  for (const key of order) {
+    const versions = byKey.get(key)!;
+    if (versions.length === 1) resolved.push(versions[0]);
+    else groups.push({ key, versions });
+  }
+  return { resolved, groups };
+}
+
 const META_TEXT_FIELDS = ["name", "email", "phone", "linkedin", "github", "website"] as const;
 type MetaTextField = (typeof META_TEXT_FIELDS)[number];
 
@@ -244,11 +315,18 @@ interface PendingReview {
   meta: Partial<Meta>;
   metaConflicts: MetaFieldConflict[];
   jobs: Sourced<JobEntry>[];
+  jobGroups: EntryGroup<JobEntry>[];
   projects: Sourced<ProjectEntry>[];
+  projectGroups: EntryGroup<ProjectEntry>[];
   education: Sourced<EducationEntry>[];
   certifications: Sourced<Certification>[];
   technical_skills: TechnicalSkills;
 }
+
+type CompareModalState =
+  | { kind: "job"; group: EntryGroup<JobEntry> }
+  | { kind: "project"; group: EntryGroup<ProjectEntry> }
+  | null;
 
 type ListField = "jobs" | "projects" | "education" | "certifications";
 
@@ -274,6 +352,7 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
   const [extractWarnings, setExtractWarnings] = useState<string[]>([]);
   const [sourceErrors, setSourceErrors] = useState<{ label: string; message: string }[]>([]);
   const [pending, setPending] = useState<PendingReview | null>(null);
+  const [compareModal, setCompareModal] = useState<CompareModalState>(null);
 
   async function handleExtract() {
     const sources: { file?: File; text?: string; label: string }[] = [
@@ -329,10 +408,10 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
       results.map((r) => ({ label: r.label, meta: normalizeMeta(r.fragment.meta) }))
     );
 
-    const jobs = results.flatMap((r) =>
+    const allJobs = results.flatMap((r) =>
       (Array.isArray(r.fragment.jobs) ? r.fragment.jobs : []).map((j) => ({ entry: buildJobEntry(j), source: r.label }))
     );
-    const projects = results.flatMap((r) =>
+    const allProjects = results.flatMap((r) =>
       (Array.isArray(r.fragment.projects) ? r.fragment.projects : []).map((p) => ({
         entry: buildProjectEntry(p),
         source: r.label,
@@ -354,8 +433,43 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
       results.map((r) => normalizeTechnicalSkills(r.fragment.technical_skills))
     );
 
-    setPending({ meta, metaConflicts: conflicts, jobs, projects, education, certifications, technical_skills });
+    const { resolved: jobs, groups: jobGroups } = groupBySourceKey(allJobs, jobDedupKey);
+    const { resolved: projects, groups: projectGroups } = groupBySourceKey(allProjects, projectDedupKey);
+
+    setPending({
+      meta,
+      metaConflicts: conflicts,
+      jobs,
+      jobGroups,
+      projects,
+      projectGroups,
+      education,
+      certifications,
+      technical_skills,
+    });
     setExtracting(false);
+  }
+
+  function resolveJobGroup(key: string, chosen: Sourced<JobEntry>) {
+    setPending((prev) =>
+      prev
+        ? { ...prev, jobs: [...prev.jobs, chosen], jobGroups: prev.jobGroups.filter((g) => g.key !== key) }
+        : prev
+    );
+    setCompareModal(null);
+  }
+
+  function resolveProjectGroup(key: string, chosen: Sourced<ProjectEntry>) {
+    setPending((prev) =>
+      prev
+        ? {
+            ...prev,
+            projects: [...prev.projects, chosen],
+            projectGroups: prev.projectGroups.filter((g) => g.key !== key),
+          }
+        : prev
+    );
+    setCompareModal(null);
   }
 
   function updateMetaField(field: MetaTextField, value: string) {
@@ -366,8 +480,10 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
     setPending((prev) => (prev ? { ...prev, [key]: next } : prev));
   }
 
+  const hasUnresolvedGroups = !!pending && (pending.jobGroups.length > 0 || pending.projectGroups.length > 0);
+
   function acceptAll() {
-    if (!pending) return;
+    if (!pending || hasUnresolvedGroups) return;
     onAccept({
       meta: pending.meta,
       jobs: pending.jobs.map((j) => j.entry),
@@ -389,7 +505,9 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
   const hasPendingContent =
     !!pending &&
     (pending.jobs.length > 0 ||
+      pending.jobGroups.length > 0 ||
       pending.projects.length > 0 ||
+      pending.projectGroups.length > 0 ||
       pending.education.length > 0 ||
       pending.certifications.length > 0 ||
       Object.keys(pending.meta).length > 0 ||
@@ -457,7 +575,7 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
             <div className="flex gap-2">
               <button
                 onClick={acceptAll}
-                disabled={!hasPendingContent}
+                disabled={!hasPendingContent || hasUnresolvedGroups}
                 className="rounded bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50"
               >
                 Add all accepted items
@@ -470,6 +588,13 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
               </button>
             </div>
           </div>
+
+          {hasUnresolvedGroups && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Resolve the {pending.jobGroups.length + pending.projectGroups.length} version conflict(s) below
+              before adding.
+            </p>
+          )}
 
           {!hasPendingContent && (
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
@@ -529,6 +654,26 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
             </div>
           )}
 
+          {pending.jobGroups.map((group) => (
+            <div
+              key={group.key}
+              className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30"
+            >
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                {group.versions[0].entry.company} — {group.versions[0].entry.role}
+              </p>
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                {group.versions.length} versions found (from: {group.versions.map((v) => v.source).join(", ")})
+              </p>
+              <button
+                onClick={() => setCompareModal({ kind: "job", group })}
+                className="self-start rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Compare versions
+              </button>
+            </div>
+          ))}
+
           {pending.jobs.map((item, i) => (
             <div key={i} className="flex flex-col gap-1">
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
@@ -547,6 +692,24 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
                   )
                 }
               />
+            </div>
+          ))}
+
+          {pending.projectGroups.map((group) => (
+            <div
+              key={group.key}
+              className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30"
+            >
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{group.versions[0].entry.name}</p>
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                {group.versions.length} versions found (from: {group.versions.map((v) => v.source).join(", ")})
+              </p>
+              <button
+                onClick={() => setCompareModal({ kind: "project", group })}
+                className="self-start rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Compare versions
+              </button>
             </div>
           ))}
 
@@ -633,6 +796,23 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
             </div>
           )}
         </div>
+      )}
+
+      {compareModal?.kind === "job" && (
+        <JobVersionCompareModal
+          title={`${compareModal.group.versions[0].entry.company} — ${compareModal.group.versions[0].entry.role}`}
+          versions={compareModal.group.versions}
+          onSelect={(version) => resolveJobGroup(compareModal.group.key, version)}
+          onClose={() => setCompareModal(null)}
+        />
+      )}
+      {compareModal?.kind === "project" && (
+        <ProjectVersionCompareModal
+          title={compareModal.group.versions[0].entry.name}
+          versions={compareModal.group.versions}
+          onSelect={(version) => resolveProjectGroup(compareModal.group.key, version)}
+          onClose={() => setCompareModal(null)}
+        />
       )}
     </section>
   );

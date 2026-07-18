@@ -276,8 +276,6 @@ export interface SaveExperienceRequest {
 
 export interface SaveExperienceResponse {
   path: string;
-  /** Absolute path to the pre-write backup, or null on a brand-new file with nothing to back up. */
-  backupPath: string | null;
 }
 
 /** GET /api/experience response — `isNew` flags a brand-new user with no

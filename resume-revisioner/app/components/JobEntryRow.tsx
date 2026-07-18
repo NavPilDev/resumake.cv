@@ -144,12 +144,11 @@ export default function JobEntryRow({ job, onChange, onRemove }: JobEntryRowProp
         </div>
       </details>
 
-      <div>
-        <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-          Bullets — what you did, the skills/tools used, and any measurable impact
-        </p>
-        <BulletEditor bullets={job.bullets} onChange={(bullets) => set("bullets", bullets)} />
-      </div>
+      <BulletEditor
+        bullets={job.bullets}
+        onChange={(bullets) => set("bullets", bullets)}
+        label="Bullets — what you did, the skills/tools used, and any measurable impact"
+      />
     </div>
   );
 }
