@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { ResumeFileBrowser } from "@/app/components/ResumeFileBrowser";
 import { ResumeSaveLocationModal } from "@/app/components/ResumeSaveLocationModal";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
 import { cn } from "@/lib/utils";
 import { CONTACT_FIELDS } from "@/lib/contactFields";
@@ -37,6 +38,16 @@ function emptySelection(): ResumeSelection {
 }
 
 type SectionKey = "toc" | "contact" | "education" | "jobs" | "projects" | "certifications" | "skills";
+
+const sectionLabels: Record<SectionKey, string> = {
+  toc: "All Sections",
+  contact: "Contact Info",
+  education: "Education",
+  jobs: "Work Experience",
+  projects: "Projects",
+  certifications: "Certifications",
+  skills: "Technical Skills",
+};
 
 const sectionCardClass =
   "flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950";
@@ -74,6 +85,39 @@ function SectionHeader({ label, onBack }: { label: string; onBack: () => void })
   );
 }
 
+type EditorView = "form" | "latex";
+
+function ViewToggle({ value, onChange }: { value: EditorView; onChange: (v: EditorView) => void }) {
+  return (
+    <div className="relative flex shrink-0 items-center rounded-full border border-zinc-300 bg-zinc-100 p-0.5 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-900">
+      <span
+        className={cn(
+          "absolute top-0.5 bottom-0.5 left-0.5 w-14 rounded-full bg-white shadow-sm transition-transform dark:bg-zinc-700",
+          value === "latex" && "translate-x-14"
+        )}
+      />
+      <button
+        onClick={() => onChange("form")}
+        className={cn(
+          "relative z-10 w-14 rounded-full px-2 py-1 text-center",
+          value === "form" ? "text-zinc-900 dark:text-zinc-50" : "text-zinc-500 dark:text-zinc-400"
+        )}
+      >
+        Form
+      </button>
+      <button
+        onClick={() => onChange("latex")}
+        className={cn(
+          "relative z-10 w-14 rounded-full px-2 py-1 text-center",
+          value === "latex" ? "text-zinc-900 dark:text-zinc-50" : "text-zinc-500 dark:text-zinc-400"
+        )}
+      >
+        LaTeX
+      </button>
+    </div>
+  );
+}
+
 export default function ResumesBuilder() {
   const [experience, setExperience] = useState<ExperienceData>(EMPTY_EXPERIENCE);
   const [experienceLoading, setExperienceLoading] = useState(true);
@@ -84,6 +128,9 @@ export default function ResumesBuilder() {
 
   const [mode, setMode] = useState<"browse" | "create" | "edit">("browse");
   const [activeSection, setActiveSection] = useState<SectionKey>("toc");
+  const [editorView, setEditorView] = useState<EditorView>("form");
+  const [texContent, setTexContent] = useState<string | null>(null);
+  const [texLoading, setTexLoading] = useState(false);
   const [resumeId, setResumeId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [selection, setSelection] = useState<ResumeSelection>(emptySelection());
@@ -146,6 +193,8 @@ export default function ResumesBuilder() {
   function startCreate() {
     setMode("create");
     setActiveSection("toc");
+    setEditorView("form");
+    setTexContent(null);
     setResumeId(null);
     setTitle("");
     setSelection(emptySelection());
@@ -164,6 +213,8 @@ export default function ResumesBuilder() {
       const manifest = data as ResumeManifest;
       setMode("edit");
       setActiveSection("toc");
+      setEditorView("form");
+      setTexContent(null);
       setResumeId(manifest.id);
       setTitle(manifest.title);
       setSelection(manifest.selection);
@@ -329,6 +380,26 @@ export default function ResumesBuilder() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (editorView !== "latex" || !resumeId) return;
+    let cancelled = false;
+    setTexLoading(true);
+    setTexContent(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/resumes/${resumeId}/tex`);
+        if (!res.ok) return;
+        const text = await res.text();
+        if (!cancelled) setTexContent(text);
+      } finally {
+        if (!cancelled) setTexLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editorView, resumeId, lastCompileAt]);
 
   if (experienceLoading || treeLoading) {
     return <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>;
@@ -573,100 +644,141 @@ export default function ResumesBuilder() {
 
   return (
     <div
-      className="flex overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
+      className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
       style={{ height: "calc(100vh - 220px)", minHeight: 560 }}
     >
-      <div className="h-full w-64 shrink-0">
-        <ResumeFileBrowser
-          tree={tree}
-          selectedId={resumeId}
-          onOpenResume={openResume}
-          onCreateFolder={handleCreateFolder}
-          onCreateResume={startCreate}
-        />
-      </div>
+      <ResizablePanelGroup direction="horizontal" className="h-full">
+        <ResizablePanel defaultSize={18} minSize={12} maxSize={32}>
+          <ResumeFileBrowser
+            tree={tree}
+            selectedId={resumeId}
+            onOpenResume={openResume}
+            onCreateFolder={handleCreateFolder}
+            onCreateResume={startCreate}
+          />
+        </ResizablePanel>
 
-      <div className="min-w-0 flex-1 overflow-y-auto border-r border-zinc-200 p-6 dark:border-zinc-800">
-        {mode === "browse" && (
-          <div className="flex h-full items-center justify-center text-center text-sm text-zinc-500 dark:text-zinc-400">
-            Select a saved resume on the left, or click the new-resume button to create one.
-          </div>
-        )}
+        <ResizableHandle withHandle />
 
-        {mode !== "browse" && (
+        {mode === "browse" ? (
+          <ResizablePanel defaultSize={82} minSize={30}>
+            <div className="flex h-full items-center justify-center text-center text-sm text-zinc-500 dark:text-zinc-400">
+              Select a saved resume on the left, or click the new-resume button to create one.
+            </div>
+          </ResizablePanel>
+        ) : (
           <>
-            {activeSection === "toc" && renderToc()}
-            {activeSection === "contact" && renderContactSection()}
-            {activeSection === "education" && renderEducationSection()}
-            {activeSection === "jobs" && renderJobsSection()}
-            {activeSection === "projects" && renderProjectsSection()}
-            {activeSection === "certifications" && renderCertificationsSection()}
-            {activeSection === "skills" && renderSkillsSection()}
+            <ResizablePanel defaultSize={54} minSize={30}>
+              <div className="flex h-full flex-col">
+                <div className="flex shrink-0 items-center justify-between gap-4 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
+                  <span className="truncate text-sm text-zinc-700 dark:text-zinc-300">
+                    <span className="font-medium text-zinc-900 dark:text-zinc-50">
+                      {title || "New resume"}
+                    </span>
+                    <span className="mx-1.5 text-zinc-400 dark:text-zinc-600">/</span>
+                    {sectionLabels[activeSection]}
+                  </span>
+                  <ViewToggle value={editorView} onChange={setEditorView} />
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                  {editorView === "latex" ? (
+                    !resumeId ? (
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        Save this resume to generate its LaTeX source.
+                      </p>
+                    ) : texLoading ? (
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+                    ) : texContent ? (
+                      <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                        {texContent}
+                      </pre>
+                    ) : (
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        This resume hasn&apos;t been compiled yet — save to generate LaTeX.
+                      </p>
+                    )
+                  ) : (
+                    <>
+                      {activeSection === "toc" && renderToc()}
+                      {activeSection === "contact" && renderContactSection()}
+                      {activeSection === "education" && renderEducationSection()}
+                      {activeSection === "jobs" && renderJobsSection()}
+                      {activeSection === "projects" && renderProjectsSection()}
+                      {activeSection === "certifications" && renderCertificationsSection()}
+                      {activeSection === "skills" && renderSkillsSection()}
+                    </>
+                  )}
+                </div>
+              </div>
+            </ResizablePanel>
+
+            <ResizableHandle withHandle />
+
+            <ResizablePanel defaultSize={28} minSize={20}>
+              <aside className="flex h-full flex-col gap-3 overflow-y-auto p-6">
+                <div className="flex items-center gap-2">
+                  {resumeId ? (
+                    <input
+                      value={title}
+                      onChange={(e) => {
+                        setTitle(e.target.value);
+                        setDirty(true);
+                      }}
+                      className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm font-medium text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    />
+                  ) : (
+                    <p className="flex-1 text-sm text-zinc-500 dark:text-zinc-400">New resume (unsaved)</p>
+                  )}
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !dirty}
+                    className={cn(
+                      "shrink-0 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50",
+                      dirty ? "bg-emerald-600 hover:bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-700"
+                    )}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+
+                {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+
+                <div className="aspect-[8.5/11] w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+                  {resumeId && lastCompileAt ? (
+                    <iframe
+                      src={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}#toolbar=0&navpanes=0`}
+                      className="h-full w-full"
+                      title="Resume preview"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                      Save to generate a preview.
+                    </div>
+                  )}
+                </div>
+
+                {resumeId && (
+                  <div className="flex gap-4 text-sm">
+                    <a
+                      href={`/api/resumes/${resumeId}/pdf?download=1`}
+                      className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                    >
+                      Download PDF
+                    </a>
+                    <a
+                      href={`/api/resumes/${resumeId}/tex`}
+                      className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                    >
+                      Download .tex
+                    </a>
+                  </div>
+                )}
+              </aside>
+            </ResizablePanel>
           </>
         )}
-      </div>
-
-      {mode !== "browse" && (
-        <aside className="flex w-[420px] shrink-0 flex-col gap-3 overflow-y-auto p-6">
-          <div className="flex items-center gap-2">
-            {resumeId ? (
-              <input
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  setDirty(true);
-                }}
-                className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm font-medium text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-              />
-            ) : (
-              <p className="flex-1 text-sm text-zinc-500 dark:text-zinc-400">New resume (unsaved)</p>
-            )}
-            <button
-              onClick={handleSave}
-              disabled={saving || !dirty}
-              className={cn(
-                "shrink-0 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50",
-                dirty ? "bg-emerald-600 hover:bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-700"
-              )}
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-          </div>
-
-          {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
-
-          <div className="aspect-[8.5/11] w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
-            {resumeId && lastCompileAt ? (
-              <iframe
-                src={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}`}
-                className="h-full w-full"
-                title="Resume preview"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                Save to generate a preview.
-              </div>
-            )}
-          </div>
-
-          {resumeId && (
-            <div className="flex gap-4 text-sm">
-              <a
-                href={`/api/resumes/${resumeId}/pdf?download=1`}
-                className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-              >
-                Download PDF
-              </a>
-              <a
-                href={`/api/resumes/${resumeId}/tex`}
-                className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-              >
-                Download .tex
-              </a>
-            </div>
-          )}
-        </aside>
-      )}
+      </ResizablePanelGroup>
 
       {showSaveModal && (
         <ResumeSaveLocationModal

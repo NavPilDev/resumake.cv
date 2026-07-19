@@ -68,7 +68,7 @@ export function ResumeFileBrowser({
   }
 
   return (
-    <div className="flex h-full w-full flex-col border-r">
+    <div className="flex h-full w-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b p-3">
         <span className="text-sm font-medium">Saved Resumes</span>
         <div className="flex gap-1">
