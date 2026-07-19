@@ -54,6 +54,63 @@ function ChevronIcon() {
   );
 }
 
+const iconProps = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.5,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true,
+  className: "h-4 w-4 shrink-0 text-zinc-500 dark:text-zinc-400",
+};
+
+const GROUP_ICONS: Record<string, React.ReactNode> = {
+  "exp-section-contact": (
+    <svg {...iconProps}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="9" cy="11" r="2" />
+      <path d="M6 16c.6-1.6 1.8-2.5 3-2.5s2.4.9 3 2.5" />
+      <path d="M14 10h4M14 13h4" />
+    </svg>
+  ),
+  "exp-section-jobs": (
+    <svg {...iconProps}>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M3 12h18" />
+      <path d="M10 12v1.5h4V12" />
+    </svg>
+  ),
+  "exp-section-projects": (
+    <svg {...iconProps}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+    </svg>
+  ),
+  "exp-section-education": (
+    <svg {...iconProps}>
+      <path d="M2 9.5 12 5l10 4.5-10 4.5-10-4.5Z" />
+      <path d="M6 11.5V16c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-4.5" />
+      <path d="M21 9.5v5" />
+    </svg>
+  ),
+  "exp-section-certifications": (
+    <svg {...iconProps}>
+      <circle cx="12" cy="9" r="5.5" />
+      <path d="M9 13.5 8 21l4-2 4 2-1-7.5" />
+    </svg>
+  ),
+  "exp-section-skills": (
+    <svg {...iconProps}>
+      <path d="M14.5 4.5a3.5 3.5 0 0 0-4.6 4.6L4 15v3h3l5.9-5.9a3.5 3.5 0 0 0 4.6-4.6l-2.6 2.6-2-2 2.6-2.6Z" />
+    </svg>
+  ),
+};
+
+function GroupIcon({ groupId }: { groupId: string }) {
+  return GROUP_ICONS[groupId] ?? null;
+}
+
 function scrollToId(e: React.MouseEvent, id: string) {
   e.preventDefault();
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -71,9 +128,9 @@ export default function ExperienceSidebarToc({ groups }: ExperienceSidebarTocPro
         {groups.map((group) => (
           <details key={group.id} className="group rounded-md border border-zinc-100 p-2 text-sm dark:border-zinc-800">
             <summary className="flex list-none justify-between cursor-pointer items-center gap-2 font-medium text-zinc-800 [&::-webkit-details-marker]:hidden dark:text-zinc-200">
-              
+              <GroupIcon groupId={group.id} />
               {group.needsAttention && <RedDot />}
-              <a href={`#${group.id}`} onClick={(e) => scrollToId(e, group.id)} className="hover:underline">
+              <a href={`#${group.id}`} onClick={(e) => scrollToId(e, group.id)} className="mr-auto hover:underline">
                 {group.label}
               </a>
             <div className="flex gap-2 select-none">
@@ -81,7 +138,10 @@ export default function ExperienceSidebarToc({ groups }: ExperienceSidebarTocPro
                 <ChevronIcon />
               </div>
             </summary>
-            <ul className="mt-1.5 flex flex-col gap-1 pl-4">
+            <ul className="relative mt-1.5 flex flex-col gap-1 pl-4">
+              {group.entries.length > 0 && (
+                <div className="absolute bottom-1 left-1.5 top-0 w-px bg-zinc-200 dark:bg-zinc-800" />
+              )}
               {group.entries.length === 0 && <li className="text-xs text-zinc-500 dark:text-zinc-400">—</li>}
               {group.entries.map((entry) => (
                 <li key={entry.id} className="flex items-center gap-1.5">
