@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import ExperienceUploadPanel from "@/app/components/ExperienceUploadPanel";
 import ExperienceSidebarToc, { type TocGroup } from "@/app/components/ExperienceSidebarToc";
 import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
@@ -31,6 +32,8 @@ export default function ExperienceBuilder() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<SaveExperienceResponse | null>(null);
+  const [showSavedToast, setShowSavedToast] = useState(false);
+  const savedToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +64,7 @@ export default function ExperienceBuilder() {
   }
 
   async function handleSave() {
+    if (saving || !dirty) return;
     setSaving(true);
     setSaveError(null);
     setSaveResult(null);
@@ -75,12 +79,35 @@ export default function ExperienceBuilder() {
       setSaveResult(data as SaveExperienceResponse);
       setDirty(false);
       setIsNew(false);
+      setShowSavedToast(true);
+      if (savedToastTimeoutRef.current) clearTimeout(savedToastTimeoutRef.current);
+      savedToastTimeoutRef.current = setTimeout(() => setShowSavedToast(false), 2000);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save experience.yaml");
     } finally {
       setSaving(false);
     }
   }
+
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSaveRef.current();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (savedToastTimeoutRef.current) clearTimeout(savedToastTimeoutRef.current);
+    };
+  }, []);
 
   if (loading) {
     return <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading your experience…</p>;
@@ -247,6 +274,32 @@ export default function ExperienceBuilder() {
           </div>
         </aside>
       </section>
+
+      <AnimatePresence>
+        {showSavedToast && (
+          <motion.div
+            role="status"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.15 }}
+            className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
+              <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                <path
+                  d="M5 10.5l3 3 7-7"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            All changes saved
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
