@@ -10,25 +10,29 @@ import type {
 } from "./types";
 
 export function toSections(data: ExperienceData): Section[] {
-  const jobSections: Section[] = (data.jobs ?? []).map((job, i) => ({
-    id: `job-${i}-${slug(job.company)}`,
-    kind: "job",
-    label: `${job.company} — ${job.role}`,
-    dates: job.dates,
-    location: job.location,
-    company: job.company,
-    role: job.role,
-    bullets: job.bullets,
-  }));
+  const jobSections: Section[] = (data.jobs ?? [])
+    .filter((job) => job.included !== false)
+    .map((job, i) => ({
+      id: `job-${i}-${slug(job.company)}`,
+      kind: "job",
+      label: `${job.company} — ${job.role}`,
+      dates: job.dates,
+      location: job.location,
+      company: job.company,
+      role: job.role,
+      bullets: job.bullets,
+    }));
 
-  const projectSections: Section[] = (data.projects ?? []).map((project, i) => ({
-    id: `project-${i}-${slug(project.name)}`,
-    kind: "project",
-    label: project.name,
-    dates: project.dates,
-    links: project.links,
-    bullets: project.bullets,
-  }));
+  const projectSections: Section[] = (data.projects ?? [])
+    .filter((project) => project.included !== false)
+    .map((project, i) => ({
+      id: `project-${i}-${slug(project.name)}`,
+      kind: "project",
+      label: project.name,
+      dates: project.dates,
+      links: project.links,
+      bullets: project.bullets,
+    }));
 
   return [...jobSections, ...projectSections];
 }

@@ -9,8 +9,22 @@ export interface JobEntry {
   company: string;
   role: string;
   dates: string;
+  /** Structured "YYYY-MM-DD" alongside the free-text `dates` display string. */
+  start_date?: string;
+  /** Structured "YYYY-MM-DD", or "present". */
+  end_date?: string;
   date_confidence: string;
   location?: string;
+  work_mode?: string;
+  hours_per_week?: number;
+  /** Government positions only. */
+  pay_plan?: string;
+  pay_series?: string;
+  pay_grade?: string;
+  /** Whether this entry is offered to the tailoring pipeline. Absent/undefined
+   * means included — only an explicit `false` excludes it, so existing
+   * entries in hand-authored experience.yaml keep showing up unchanged. */
+  included?: boolean;
   bullets: Bullet[];
 }
 
@@ -24,17 +38,43 @@ export interface ProjectEntry {
   dates: string;
   date_confidence: string;
   links?: ProjectLink[];
+  included?: boolean;
   bullets: Bullet[];
 }
 
 export interface EducationEntry {
   institution: string;
   credential: string;
+  /** Structured facets of `credential`, e.g. "Bachelor's" / "Computer Science". */
+  degree_level?: string;
+  major?: string;
   dates: string;
+  /** Structured "YYYY-MM" graduation date alongside the free-text `dates`. */
+  graduation_date?: string;
+  /** String rather than number so "3.8/4.0" or honors wording both fit. */
+  gpa?: string;
   date_confidence: string;
   location?: string;
   details?: string[];
   links?: ProjectLink[];
+  included?: boolean;
+}
+
+export interface Certification {
+  id: string;
+  name: string;
+  issuer?: string;
+  /** "YYYY-MM" issue date. */
+  date?: string;
+  expiration_date?: string;
+  credential_id?: string;
+  links?: ProjectLink[];
+  included?: boolean;
+}
+
+export interface SocialLink {
+  platform: string;
+  url: string;
 }
 
 export interface TechnicalSkillEntry {
@@ -46,17 +86,24 @@ export interface TechnicalSkills {
   [category: string]: TechnicalSkillEntry[];
 }
 
+export interface Meta {
+  name: string;
+  email: string;
+  phone?: string;
+  linkedin: string;
+  github: string;
+  website: string;
+  /** Anything beyond linkedin/github/website above (Instagram, portfolio
+   * mirrors, etc.) — reference metadata only, never fetched/scraped. */
+  social_links?: SocialLink[];
+}
+
 export interface ExperienceData {
-  meta: {
-    name: string;
-    email: string;
-    linkedin: string;
-    github: string;
-    website: string;
-  };
+  meta: Meta;
   jobs: JobEntry[];
   projects: ProjectEntry[];
   education: EducationEntry[];
+  certifications?: Certification[];
   technical_skills: TechnicalSkills;
 }
 
@@ -187,3 +234,54 @@ export type GenerateProgressEvent =
   | { type: "needs_confirmation"; message: string }
   | { type: "result"; data: GenerateResumeResponse }
   | { type: "error"; message: string };
+
+// ---------------------------------------------------------------------------
+// "My Experience" tab: upload/paste -> Ollama extraction -> review -> save
+// ---------------------------------------------------------------------------
+
+export type ExperienceSourceKind = "pdf" | "markdown" | "json" | "text";
+
+export interface ExtractExperienceRequest {
+  /** Already-extracted plain text (PDF/MD/JSON/pasted text all normalized to
+   * this before hitting the route). */
+  rawText: string;
+  /** Filename or "pasted text" — prompt context + UI attribution. */
+  sourceLabel: string;
+  ollamaModel?: string;
+  ollamaHost?: string;
+}
+
+/** Everything here is optional/partial — the model may only find a subset of
+ * fields, and the review UI is what turns this into complete entries. `id`
+ * and `included` are deliberately absent: assigned/defaulted client-side
+ * after the user accepts, never invented by the model. */
+export interface ExtractedExperienceFragment {
+  meta?: Partial<Omit<Meta, "social_links">> & { social_links?: SocialLink[] };
+  jobs?: (Partial<Omit<JobEntry, "bullets">> & { bullets?: Partial<Bullet>[] })[];
+  projects?: (Partial<Omit<ProjectEntry, "bullets">> & { bullets?: Partial<Bullet>[] })[];
+  education?: Partial<EducationEntry>[];
+  certifications?: Partial<Omit<Certification, "id">>[];
+  technical_skills?: TechnicalSkills;
+}
+
+export interface ExtractExperienceResponse {
+  fragment: ExtractedExperienceFragment;
+  /** e.g. "PDF text was truncated to the first N characters". */
+  warnings?: string[];
+}
+
+export interface SaveExperienceRequest {
+  experience: ExperienceData;
+}
+
+export interface SaveExperienceResponse {
+  path: string;
+}
+
+/** GET /api/experience response — `isNew` flags a brand-new user with no
+ * experience.yaml on disk yet, so the UI can show an empty state instead of
+ * an error. */
+export interface GetExperienceResponse {
+  experience: ExperienceData;
+  isNew: boolean;
+}

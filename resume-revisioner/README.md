@@ -2,6 +2,8 @@
 
 Local tool for tailoring [`experience.yaml`](../experience.yaml) to a specific job description. Paste in a JD, get your bullet bank scored (0-100), see which JD keywords aren't covered, tweak the results, and generate a tailored `.tex` resume — all without ever writing back to `experience.yaml` until you explicitly export it.
 
+> **Note:** this is also where [Resumeak](../README.md#resumeak) — a planned single local, Ollama-powered program that bundles this JD-tailoring flow, experience-bank editing, application tracking, and company notes into one tool anyone can run — is being built. It hasn't been renamed yet, so it's still `resume-revisioner` in `package.json`, routes, etc.
+
 ## Run it
 
 ```bash
@@ -53,6 +55,17 @@ The "Generate tailored resume" panel (right sidebar, right under Skill gaps — 
 - If `<filename>.tex` already exists in `latex-resumes/`, generating sends a `needs_confirmation` event instead of silently overwriting — click the button again (it relabels to "Overwrite and Generate") to confirm.
 - LaTeX special characters (`% & # _ { } ~ ^ \`) are escaped via [lib/latexEscape.ts](lib/latexEscape.ts).
 - Job entries in `experience.yaml` can carry a `location:` field, which fills in the generated resume's job location column (`toSections` in [lib/scoring.ts](lib/scoring.ts) reads it if present).
+
+## "My Experience" tab — building/editing experience.yaml from the app
+
+The second top-level tab ([app/components/ExperienceBuilder.tsx](app/components/ExperienceBuilder.tsx)) is where you create or edit your `experience.yaml` bullet bank without hand-editing YAML — useful both for a brand-new user with no file yet and for touching up an existing one.
+
+- **Loading**: `GET /api/experience` ([app/api/experience/route.ts](app/api/experience/route.ts)) wraps `loadExperience()`. If no `experience.yaml` exists yet, it returns an empty shape with `isNew: true` instead of erroring, so the tab shows a "let's build one" state — the existing "Tailor Resume" tab is untouched and still fails loudly if the file goes missing mid-session.
+- **Import from a file or pasted text** ([app/components/ExperienceUploadPanel.tsx](app/components/ExperienceUploadPanel.tsx)): upload a PDF/Markdown/JSON file, or paste free text. `POST /api/experience/extract` ([app/api/experience/extract/route.ts](app/api/experience/extract/route.ts)) turns the upload into raw text ([lib/textExtract.ts](lib/textExtract.ts) — PDF via `pdf-parse`, MD/JSON read directly, capped at ~20k characters), then sends it to your local Ollama model for structured extraction ([lib/experienceExtraction.ts](lib/experienceExtraction.ts)). **Nothing is added to your experience bank until you review and accept it** — extracted jobs/projects/education/certifications render as editable cards you can fix up or discard individually before clicking "Add all accepted items."
+- **Manual editing**: every job, project, education entry, and certification is a form row ([app/components/JobEntryRow.tsx](app/components/JobEntryRow.tsx), [ProjectEntryRow.tsx](app/components/ProjectEntryRow.tsx), [EducationEntryRow.tsx](app/components/EducationEntryRow.tsx), [CertificationRow.tsx](app/components/CertificationRow.tsx)) with an "+ Add …" button to create new ones from scratch.
+- **Include/exclude toggle**: every job, project, education, and certification entry has an **"Include in tailored resume"** checkbox (`included` in `experience.yaml`, defaulting to `true` when absent — existing hand-written entries are unaffected). Unchecking it excludes that entry from `toSections` in [lib/scoring.ts](lib/scoring.ts) (and, for education, directly in [lib/generateResume.ts](lib/generateResume.ts)) — so it's filtered out before scoring/ranking ever runs on the "Tailor Resume" tab, not just hidden in the UI. Certifications aren't part of the generated resume's LaTeX output yet, but their toggle and data model exist for when that's added.
+- **Links are reference-only**: LinkedIn/GitHub/website/other social links are stored as plain metadata and are never fetched or scraped server-side.
+- **Saving**: `POST /api/experience/save` ([app/api/experience/save/route.ts](app/api/experience/save/route.ts)) calls [lib/saveExperience.ts](lib/saveExperience.ts), which writes `experience.yaml` directly (no backup file — the source-controlled repo is the safety net) and preserves the file's leading `#`-comment header block. The Save button is disabled unless you've actually changed something. **Mid-document comments do not survive a save** — `js-yaml`'s serializer has no comment support, so any inline notes get dropped the first time you save through this tab. Every bullet's `has_metric` flag is auto-detected from its text at save time (digits, `%`, or `$`) rather than hand-toggled.
 
 ## Adjusting keyword matching
 
