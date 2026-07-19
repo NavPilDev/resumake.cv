@@ -8,6 +8,7 @@ import EducationEntryRow from "@/app/components/EducationEntryRow";
 import JobEntryRow from "@/app/components/JobEntryRow";
 import ProjectEntryRow from "@/app/components/ProjectEntryRow";
 import TechnicalSkillsSection from "@/app/components/TechnicalSkillsSection";
+import { slugifySkillCategory } from "@/lib/technicalSkillCategory";
 import type {
   Bullet,
   Certification,
@@ -80,16 +81,22 @@ function normalizeLinks(value: unknown): ProjectLink[] {
     .filter((l) => l.name || l.href);
 }
 
+/** Canonicalizes an extracted category name (e.g. "Developer Tools", which
+ * the model echoes back verbatim from the source resume's own heading) into
+ * the same snake_case key convention used by hand-added categories, so both
+ * paths render/store consistently. */
 function normalizeTechnicalSkills(value: unknown): TechnicalSkills {
   if (!value || typeof value !== "object") return {};
   const result: TechnicalSkills = {};
   for (const [category, skills] of Object.entries(value as Record<string, unknown>)) {
     if (!Array.isArray(skills)) continue;
+    const key = slugifySkillCategory(category) || category.trim();
+    if (!key) continue;
     const normalized = skills
       .filter((s): s is { skill?: unknown; source?: unknown } => !!s && typeof s === "object")
       .map((s) => ({ skill: typeof s.skill === "string" ? s.skill : "", source: typeof s.source === "string" ? s.source : "resume" }))
       .filter((s) => s.skill);
-    if (normalized.length > 0) result[category] = normalized;
+    if (normalized.length > 0) result[key] = [...(result[key] ?? []), ...normalized];
   }
   return result;
 }

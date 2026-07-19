@@ -54,7 +54,11 @@ export async function POST(request: Request) {
   const host = typeof ollamaHost === "string" && ollamaHost.trim() ? ollamaHost.trim() : undefined;
 
   try {
-    const fragment = await extractExperienceFragment(rawText, sourceLabel, { model, host });
+    const { fragment, warnings: extractionWarnings } = await extractExperienceFragment(rawText, sourceLabel, {
+      model,
+      host,
+    });
+    warnings.push(...extractionWarnings);
     const payload: ExtractExperienceResponse = {
       fragment,
       warnings: warnings.length > 0 ? warnings : undefined,
