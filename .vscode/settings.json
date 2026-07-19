@@ -1,4 +1,5 @@
 {
   "latex-workshop.latex.outDir": "%DIR%/out",
-  "latex-workshop.latex.auxDir": "%DIR%/build"
+  "latex-workshop.latex.auxDir": "%DIR%/build",
+  "latex-workshop.formatting.latex": "latexindent"
 }
