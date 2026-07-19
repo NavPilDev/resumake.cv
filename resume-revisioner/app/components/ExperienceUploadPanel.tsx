@@ -7,6 +7,7 @@ import CertificationRow from "@/app/components/CertificationRow";
 import EducationEntryRow from "@/app/components/EducationEntryRow";
 import JobEntryRow from "@/app/components/JobEntryRow";
 import ProjectEntryRow from "@/app/components/ProjectEntryRow";
+import TechnicalSkillsSection from "@/app/components/TechnicalSkillsSection";
 import type {
   Bullet,
   Certification,
@@ -902,37 +903,14 @@ export default function ExperienceUploadPanel({
 
     <section id="exp-section-skills" className={sectionClass}>
       <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Technical skills</h2>
-      <div className="flex flex-col gap-3">
-        {Object.entries(experience.technical_skills).map(([category, skills]) => (
-          <div key={category}>
-            <p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{category}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {skills.map((s, si) => (
-                <span
-                  key={s.skill}
-                  className="flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-                >
-                  {s.skill}
-                  <button
-                    onClick={() =>
-                      onChange({
-                        technical_skills: {
-                          ...experience.technical_skills,
-                          [category]: skills.filter((_, i2) => i2 !== si),
-                        },
-                      })
-                    }
-                    className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200"
-                    aria-label={`Remove ${s.skill}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        Group your languages, frameworks, tools, and other skills into categories — these become the
+        &quot;Technical Skills&quot; lines on your generated resume.
+      </p>
+      <TechnicalSkillsSection
+        technicalSkills={experience.technical_skills}
+        onChange={(technical_skills) => onChange({ technical_skills })}
+      />
     </section>
 
     {compareModal?.kind === "job" && (

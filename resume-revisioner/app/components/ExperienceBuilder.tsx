@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ExperienceUploadPanel from "@/app/components/ExperienceUploadPanel";
 import ExperienceSidebarToc, { type TocGroup } from "@/app/components/ExperienceSidebarToc";
+import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
 import type { ExperienceData, GetExperienceResponse, SaveExperienceResponse } from "@/lib/types";
 
 const EMPTY_EXPERIENCE: ExperienceData = {
@@ -147,7 +148,11 @@ export default function ExperienceBuilder() {
     {
       id: "exp-section-skills",
       label: "Technical skills",
-      entries: [],
+      entries: Object.keys(experience.technical_skills).map((category) => ({
+        id: `exp-skill-cat-${category}`,
+        label: humanizeSkillCategory(category),
+        needsAttention: (experience.technical_skills[category] ?? []).length === 0,
+      })),
       needsAttention: false,
     },
   ];
