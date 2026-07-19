@@ -79,9 +79,17 @@ export interface ResumeManifest {
   updatedAt: string;
   selection: ResumeSelection;
   /** bulletId -> edited plain text, mirroring the Tailor Resume flow's
-   * existing per-bullet override map. Plain text only for now — Ctrl+B/
-   * Ctrl+I rich text is deferred (see resume-revisioner/AGENTS.md). */
+   * existing per-bullet override map. Ctrl+B/Ctrl+I/Ctrl+U in the bullet
+   * textareas insert real \textbf{}/\textit{}/\underline{} commands
+   * directly into this text (see lib/latexEscape.ts's
+   * escapeLatexWithFormatting) rather than an abstracted markup syntax. */
   textOverrides: Record<string, string>;
+  /** Raw LaTeX typed directly in the "My Resumes" LaTeX-view editor. When
+   * set, this is compiled verbatim instead of regenerating .tex from
+   * `selection`/`textOverrides` — it's cleared back to null the next time
+   * the resume is saved from a Form-view edit, so Form edits always take
+   * precedence over a stale hand-edit once the user acts on them again. */
+  rawLatexOverride: string | null;
   lastCompile: { pagesUsed: number | null; compiledAt: string; warnings?: string[] } | null;
 }
 
@@ -90,12 +98,14 @@ export interface ResumeCreateRequest {
   folderPath: string;
   selection: ResumeSelection;
   textOverrides: Record<string, string>;
+  rawLatexOverride?: string | null;
 }
 
 export interface ResumeUpdateRequest {
   title?: string;
   selection: ResumeSelection;
   textOverrides: Record<string, string>;
+  rawLatexOverride?: string | null;
 }
 
 export type ResumeTreeNode =
@@ -178,7 +188,11 @@ export function loadManifest(id: string): ResumeManifest | null {
   const manifestPath = findManifestPath(id);
   if (!manifestPath) return null;
   const manifest: ResumeManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  return { ...manifest, selection: normalizeSelection(manifest.selection) };
+  return {
+    ...manifest,
+    selection: normalizeSelection(manifest.selection),
+    rawLatexOverride: manifest.rawLatexOverride ?? null,
+  };
 }
 
 export function writeManifest(folderPath: string, manifest: ResumeManifest): void {

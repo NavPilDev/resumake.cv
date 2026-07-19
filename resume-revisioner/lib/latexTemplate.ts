@@ -1,4 +1,4 @@
-import { escapeLatex } from "./latexEscape";
+import { escapeLatex, escapeLatexWithFormatting } from "./latexEscape";
 import type { Certification, EducationEntry, GenerateResumeSectionInput, TechnicalSkills } from "./types";
 
 // Preamble copied verbatim from latex-resumes/master-resume.tex — that file
@@ -165,7 +165,7 @@ function buildExperience(jobs: GenerateResumeSectionInput[]): string {
   const entries = jobs
     .map((job) => {
       const bullets = job.bullets
-        .map((b) => `                    \\resumeItem{${escapeLatex(b.text)}}`)
+        .map((b) => `                    \\resumeItem{${escapeLatexWithFormatting(b.text)}}`)
         .join("\n");
       return String.raw`                \resumeSubheading{${escapeLatex(job.company ?? "")}}{${escapeLatex(job.dates)}}{${escapeLatex(job.role ?? "")}}{${escapeLatex(job.location ?? "")}}
                 \resumeItemListStart
@@ -191,7 +191,7 @@ function buildProjects(projects: GenerateResumeSectionInput[]): string {
         .join(" $|$ ");
       const titleLine = `\\textbf{{${escapeLatex(project.label)}}}` + (linkStr ? ` $|$ \\emph{${linkStr}}` : "");
       const bullets = project.bullets
-        .map((b) => `                \\resumeItem{${escapeLatex(b.text)}}`)
+        .map((b) => `                \\resumeItem{${escapeLatexWithFormatting(b.text)}}`)
         .join("\n");
       return String.raw`        \resumeProjectHeading
             {${titleLine}}{${escapeLatex(project.dates)}}

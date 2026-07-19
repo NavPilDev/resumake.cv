@@ -33,7 +33,8 @@ function isValidCreateRequest(value: unknown): value is ResumeCreateRequest {
     !!v.selection &&
     typeof v.selection === "object" &&
     !!v.textOverrides &&
-    typeof v.textOverrides === "object"
+    typeof v.textOverrides === "object" &&
+    (v.rawLatexOverride === undefined || v.rawLatexOverride === null || typeof v.rawLatexOverride === "string")
   );
 }
 
@@ -53,9 +54,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    const rawLatexOverride =
+      typeof body.rawLatexOverride === "string" && body.rawLatexOverride.trim().length > 0
+        ? body.rawLatexOverride
+        : null;
     const experience = loadExperience();
     const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides);
-    const tex = buildResumeTex(templateInput);
+    const tex = rawLatexOverride ?? buildResumeTex(templateInput);
     const id = crypto.randomUUID();
     const compileResult = await compileSavedResume(id, tex);
 
@@ -67,6 +72,7 @@ export async function POST(request: Request) {
       updatedAt: now,
       selection: body.selection,
       textOverrides: body.textOverrides,
+      rawLatexOverride,
       lastCompile: { pagesUsed: compileResult.pages, compiledAt: now },
     };
     writeManifest(body.folderPath, manifest);

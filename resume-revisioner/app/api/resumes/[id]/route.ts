@@ -31,7 +31,8 @@ function isValidUpdateRequest(value: unknown): value is ResumeUpdateRequest {
     !!v.selection &&
     typeof v.selection === "object" &&
     !!v.textOverrides &&
-    typeof v.textOverrides === "object"
+    typeof v.textOverrides === "object" &&
+    (v.rawLatexOverride === undefined || v.rawLatexOverride === null || typeof v.rawLatexOverride === "string")
   );
 }
 
@@ -58,10 +59,14 @@ export async function PUT(
   }
 
   try {
+    const rawLatexOverride =
+      typeof body.rawLatexOverride === "string" && body.rawLatexOverride.trim().length > 0
+        ? body.rawLatexOverride
+        : null;
     const existing = loadManifest(id);
     const experience = loadExperience();
     const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides);
-    const tex = buildResumeTex(templateInput);
+    const tex = rawLatexOverride ?? buildResumeTex(templateInput);
     const compileResult = await compileSavedResume(id, tex);
 
     const now = new Date().toISOString();
@@ -72,6 +77,7 @@ export async function PUT(
       updatedAt: now,
       selection: body.selection,
       textOverrides: body.textOverrides,
+      rawLatexOverride,
       lastCompile: { pagesUsed: compileResult.pages, compiledAt: now },
     };
     overwriteManifestAtPath(manifestPath, manifest);

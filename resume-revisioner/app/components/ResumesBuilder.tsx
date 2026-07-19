@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Bold, Italic, Underline, Undo2, Redo2 } from "lucide-react";
+import { undo, redo } from "@codemirror/commands";
+import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { toast } from "sonner";
 import { ResumeFileBrowser } from "@/app/components/ResumeFileBrowser";
 import { ResumeSaveLocationModal } from "@/app/components/ResumeSaveLocationModal";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { LatexEditor } from "@/components/ui/latex-editor";
 import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
 import { cn } from "@/lib/utils";
 import { CONTACT_FIELDS } from "@/lib/contactFields";
@@ -118,6 +121,36 @@ function ViewToggle({ value, onChange }: { value: EditorView; onChange: (v: Edit
   );
 }
 
+/** Icon button for the editor's contextual toolbar row (bold/italic/
+ * underline in Form view, undo/redo in LaTeX view). Uses onMouseDown +
+ * preventDefault (not onClick) so clicking the button never steals focus
+ * away from whichever bullet textarea has the active text selection —
+ * onClick would fire after the browser has already moved focus to the
+ * button, losing the selection applyFormatting needs to read. */
+function ToolbarIconButton({
+  title,
+  onActivate,
+  children,
+}: {
+  title: string;
+  onActivate: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onActivate();
+      }}
+      className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function ResumesBuilder() {
   const [experience, setExperience] = useState<ExperienceData>(EMPTY_EXPERIENCE);
   const [experienceLoading, setExperienceLoading] = useState(true);
@@ -131,6 +164,8 @@ export default function ResumesBuilder() {
   const [editorView, setEditorView] = useState<EditorView>("form");
   const [texContent, setTexContent] = useState<string | null>(null);
   const [texLoading, setTexLoading] = useState(false);
+  const [texDirty, setTexDirty] = useState(false);
+  const latexEditorRef = useRef<ReactCodeMirrorRef>(null);
   const [resumeId, setResumeId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [selection, setSelection] = useState<ResumeSelection>(emptySelection());
@@ -195,6 +230,7 @@ export default function ResumesBuilder() {
     setActiveSection("toc");
     setEditorView("form");
     setTexContent(null);
+    setTexDirty(false);
     setResumeId(null);
     setTitle("");
     setSelection(emptySelection());
@@ -215,6 +251,7 @@ export default function ResumesBuilder() {
       setActiveSection("toc");
       setEditorView("form");
       setTexContent(null);
+      setTexDirty(false);
       setResumeId(manifest.id);
       setTitle(manifest.title);
       setSelection(manifest.selection);
@@ -247,6 +284,7 @@ export default function ResumesBuilder() {
       return { ...prev, contact: has ? prev.contact.filter((k) => k !== key) : [...prev.contact, key] };
     });
     setDirty(true);
+    setTexDirty(false);
   }
 
   function toggleJob(jobId: string, allBulletIds: string[]) {
@@ -260,6 +298,7 @@ export default function ResumesBuilder() {
       return { ...prev, jobs: { ...prev.jobs, [jobId]: next } };
     });
     setDirty(true);
+    setTexDirty(false);
   }
 
   function toggleJobBullet(jobId: string, bulletId: string) {
@@ -273,6 +312,7 @@ export default function ResumesBuilder() {
       return { ...prev, jobs: { ...prev.jobs, [jobId]: next } };
     });
     setDirty(true);
+    setTexDirty(false);
   }
 
   function toggleProject(projectId: string, allBulletIds: string[]) {
@@ -286,6 +326,7 @@ export default function ResumesBuilder() {
       return { ...prev, projects: { ...prev.projects, [projectId]: next } };
     });
     setDirty(true);
+    setTexDirty(false);
   }
 
   function toggleProjectBullet(projectId: string, bulletId: string) {
@@ -299,6 +340,7 @@ export default function ResumesBuilder() {
       return { ...prev, projects: { ...prev.projects, [projectId]: next } };
     });
     setDirty(true);
+    setTexDirty(false);
   }
 
   function toggleArrayMember(key: "education" | "certifications" | "technicalSkillCategories", id: string) {
@@ -308,22 +350,31 @@ export default function ResumesBuilder() {
       return { ...prev, [key]: next };
     });
     setDirty(true);
+    setTexDirty(false);
   }
 
   function setOverride(bulletId: string, text: string) {
     setTextOverrides((prev) => ({ ...prev, [bulletId]: text }));
     setDirty(true);
+    setTexDirty(false);
   }
 
   async function doSave(finalTitle: string, folderPath?: string) {
     setSaving(true);
     setSaveError(null);
+    const rawLatexOverride = texDirty ? texContent : null;
     try {
       if (!resumeId) {
         const res = await fetch("/api/resumes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: finalTitle, folderPath: folderPath ?? "", selection, textOverrides }),
+          body: JSON.stringify({
+            title: finalTitle,
+            folderPath: folderPath ?? "",
+            selection,
+            textOverrides,
+            rawLatexOverride,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
@@ -333,6 +384,7 @@ export default function ResumesBuilder() {
         setMode("edit");
         setLastCompileAt(manifest.lastCompile?.compiledAt ?? manifest.updatedAt);
         setDirty(false);
+        setTexDirty(false);
         setShowSaveModal(false);
         toast.success("Resume saved");
         await refreshTree();
@@ -340,7 +392,7 @@ export default function ResumesBuilder() {
         const res = await fetch(`/api/resumes/${resumeId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: finalTitle, selection, textOverrides }),
+          body: JSON.stringify({ title: finalTitle, selection, textOverrides, rawLatexOverride }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
@@ -348,6 +400,7 @@ export default function ResumesBuilder() {
         setTitle(manifest.title);
         setLastCompileAt(manifest.lastCompile?.compiledAt ?? manifest.updatedAt);
         setDirty(false);
+        setTexDirty(false);
         toast.success("Resume saved");
         await refreshTree();
       }
@@ -370,11 +423,43 @@ export default function ResumesBuilder() {
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
 
+  /** Wraps the current selection in the last-focused bullet textarea (see
+   * the data-bullet-id attribute set in renderBulletRow) with a real LaTeX
+   * formatting command — mapped straight to Overleaf's documented
+   * \textbf{}/\textit{}/\underline{} commands (not an abstracted markup
+   * syntax), so escapeLatexWithFormatting can pass it through verbatim at
+   * compile time. No-ops if focus isn't in a bullet textarea or nothing is
+   * selected. */
+  function applyFormatting(kind: "bold" | "italic" | "underline") {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLTextAreaElement) || !el.dataset.bulletId) return;
+    const bulletId = el.dataset.bulletId;
+    const { selectionStart, selectionEnd, value } = el;
+    if (selectionStart === selectionEnd) return;
+    const selected = value.slice(selectionStart, selectionEnd);
+    const command = kind === "bold" ? "textbf" : kind === "italic" ? "textit" : "underline";
+    const nextValue = `${value.slice(0, selectionStart)}\\${command}{${selected}}${value.slice(selectionEnd)}`;
+    setOverride(bulletId, nextValue);
+    requestAnimationFrame(() => {
+      el.focus();
+      const openTagLength = command.length + 2; // "\command{"
+      el.setSelectionRange(selectionStart + openTagLength, selectionEnd + openTagLength);
+    });
+  }
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === "s") {
         e.preventDefault();
         handleSaveRef.current();
+      } else if (key === "b" || key === "i" || key === "u") {
+        const el = document.activeElement;
+        if (el instanceof HTMLTextAreaElement && el.dataset.bulletId) {
+          e.preventDefault();
+          applyFormatting(key === "b" ? "bold" : key === "i" ? "italic" : "underline");
+        }
       }
     }
     document.addEventListener("keydown", onKeyDown);
@@ -382,16 +467,24 @@ export default function ResumesBuilder() {
   }, []);
 
   useEffect(() => {
-    if (editorView !== "latex" || !resumeId) return;
+    if (!resumeId) {
+      setTexContent(null);
+      return;
+    }
     let cancelled = false;
     setTexLoading(true);
-    setTexContent(null);
     (async () => {
       try {
         const res = await fetch(`/api/resumes/${resumeId}/tex`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setTexContent(null);
+          return;
+        }
         const text = await res.text();
-        if (!cancelled) setTexContent(text);
+        if (!cancelled) {
+          setTexContent(text);
+          setTexDirty(false);
+        }
       } finally {
         if (!cancelled) setTexLoading(false);
       }
@@ -399,7 +492,7 @@ export default function ResumesBuilder() {
     return () => {
       cancelled = true;
     };
-  }, [editorView, resumeId, lastCompileAt]);
+  }, [resumeId, lastCompileAt]);
 
   if (experienceLoading || treeLoading) {
     return <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>;
@@ -422,6 +515,8 @@ export default function ResumesBuilder() {
           value={textOverrides[bulletId] ?? sourceText}
           onChange={(e) => setOverride(bulletId, e.target.value)}
           rows={2}
+          data-bullet-id={bulletId}
+          title="Select text and press Ctrl+B / Ctrl+I / Ctrl+U to format it"
           className={textareaClass}
         />
       </div>
@@ -681,35 +776,82 @@ export default function ResumesBuilder() {
                   <ViewToggle value={editorView} onChange={setEditorView} />
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <div className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
                   {editorView === "latex" ? (
-                    !resumeId ? (
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        Save this resume to generate its LaTeX source.
-                      </p>
-                    ) : texLoading ? (
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
-                    ) : texContent ? (
-                      <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-                        {texContent}
-                      </pre>
-                    ) : (
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        This resume hasn&apos;t been compiled yet — save to generate LaTeX.
-                      </p>
-                    )
+                    <>
+                      <ToolbarIconButton
+                        title="Undo (Ctrl+Z)"
+                        onActivate={() => {
+                          const view = latexEditorRef.current?.view;
+                          if (view) undo(view);
+                        }}
+                      >
+                        <Undo2 className="h-4 w-4" />
+                      </ToolbarIconButton>
+                      <ToolbarIconButton
+                        title="Redo (Ctrl+Y)"
+                        onActivate={() => {
+                          const view = latexEditorRef.current?.view;
+                          if (view) redo(view);
+                        }}
+                      >
+                        <Redo2 className="h-4 w-4" />
+                      </ToolbarIconButton>
+                    </>
                   ) : (
                     <>
-                      {activeSection === "toc" && renderToc()}
-                      {activeSection === "contact" && renderContactSection()}
-                      {activeSection === "education" && renderEducationSection()}
-                      {activeSection === "jobs" && renderJobsSection()}
-                      {activeSection === "projects" && renderProjectsSection()}
-                      {activeSection === "certifications" && renderCertificationsSection()}
-                      {activeSection === "skills" && renderSkillsSection()}
+                      <ToolbarIconButton title="Bold (Ctrl+B)" onActivate={() => applyFormatting("bold")}>
+                        <Bold className="h-4 w-4" />
+                      </ToolbarIconButton>
+                      <ToolbarIconButton title="Italic (Ctrl+I)" onActivate={() => applyFormatting("italic")}>
+                        <Italic className="h-4 w-4" />
+                      </ToolbarIconButton>
+                      <ToolbarIconButton
+                        title="Underline (Ctrl+U)"
+                        onActivate={() => applyFormatting("underline")}
+                      >
+                        <Underline className="h-4 w-4" />
+                      </ToolbarIconButton>
                     </>
                   )}
                 </div>
+
+                {editorView === "latex" ? (
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {!resumeId ? (
+                      <p className="p-6 text-sm text-zinc-500 dark:text-zinc-400">
+                        Save this resume to generate its LaTeX source.
+                      </p>
+                    ) : texLoading ? (
+                      <p className="p-6 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+                    ) : texContent !== null ? (
+                      <LatexEditor
+                        ref={latexEditorRef}
+                        value={texContent}
+                        onChange={(next) => {
+                          setTexContent(next);
+                          setTexDirty(true);
+                          setDirty(true);
+                        }}
+                        className="h-full"
+                      />
+                    ) : (
+                      <p className="p-6 text-sm text-zinc-500 dark:text-zinc-400">
+                        This resume hasn&apos;t been compiled yet — save to generate LaTeX.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                    {activeSection === "toc" && renderToc()}
+                    {activeSection === "contact" && renderContactSection()}
+                    {activeSection === "education" && renderEducationSection()}
+                    {activeSection === "jobs" && renderJobsSection()}
+                    {activeSection === "projects" && renderProjectsSection()}
+                    {activeSection === "certifications" && renderCertificationsSection()}
+                    {activeSection === "skills" && renderSkillsSection()}
+                  </div>
+                )}
               </div>
             </ResizablePanel>
 
