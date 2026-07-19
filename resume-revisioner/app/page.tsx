@@ -232,7 +232,13 @@ export default function Home() {
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-black">
-      <main className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-12">
+      <main
+        className={
+          activeTab === "resumes"
+            ? "flex w-full flex-col gap-6 px-6 py-8"
+            : "mx-auto flex max-w-5xl flex-col gap-8 px-6 py-12"
+        }
+      >
         <header>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Resume Revisioner

@@ -120,15 +120,26 @@ interface Meta {
   website: string;
 }
 
+/** Each contact segment is only included when its field is non-empty, so a
+ * saved resume can selectively omit email/linkedin/github/website via its
+ * ResumeSelection.contact toggles without leaving a dangling "~" separator
+ * or an empty \href. Name (and the hardcoded "US Citizen" line) always show. */
 function buildHeader(meta: Meta): string {
+  const segments = [
+    String.raw`$\bullet$\ \underline{\textbf{US Citizen}}`,
+    meta.email && String.raw`{\faEnvelope\  \underline{${escapeLatex(meta.email)}}}`,
+    meta.linkedin &&
+      String.raw`{\faLinkedin\ \underline{\href{${meta.linkedin}}{${escapeLatex(linkDisplayText(meta.linkedin))}}}}`,
+    meta.github &&
+      String.raw`{\faGithub\ \underline{\href{${meta.github}}{${escapeLatex(linkDisplayText(meta.github))}}}}`,
+    meta.website &&
+      String.raw`{\faBriefcase\ \underline{\href{${meta.website}}{${escapeLatex(linkDisplayText(meta.website))}}}}`,
+  ].filter((s): s is string => Boolean(s));
+
   return String.raw`\begin{center}
     {\Large \scshape ${escapeLatex(meta.name)}} \\[2mm]
     \footnotesize
-    $\bullet$\ \underline{\textbf{US Citizen}} ~
-    {\faEnvelope\  \underline{${escapeLatex(meta.email)}}} ~
-    {\faLinkedin\ \underline{\href{${meta.linkedin}}{${escapeLatex(linkDisplayText(meta.linkedin))}}}} ~
-    {\faGithub\ \underline{\href{${meta.github}}{${escapeLatex(linkDisplayText(meta.github))}}}} ~
-    {\faBriefcase\ \underline{\href{${meta.website}}{${escapeLatex(linkDisplayText(meta.website))}}}}
+    ${segments.join(" ~\n    ")}
 \end{center}`;
 }
 

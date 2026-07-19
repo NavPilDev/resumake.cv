@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { resolveRepoRoot } from "./repoPaths";
+import { CONTACT_FIELDS } from "./contactFields";
 
 /** Compiled-artifact scratch space, shared by every saved resume regardless
  * of which user-facing folder its manifest lives in — latexmk only reads
@@ -61,6 +62,9 @@ export interface SectionSelection {
 }
 
 export interface ResumeSelection {
+  /** Which optional contact fields render in the header: subset of
+   * "email" | "linkedin" | "github" | "website". Name is always shown. */
+  contact: string[];
   jobs: Record<string, SectionSelection>;
   projects: Record<string, SectionSelection>;
   education: string[];
@@ -155,10 +159,26 @@ export function findManifestPath(id: string): string | null {
   return search(root);
 }
 
+/** Fills in fields absent from a manifest written before they existed (e.g.
+ * `contact`, added after some resumes were already saved) with the same
+ * defaults a brand-new resume gets, so loading an older saved resume never
+ * crashes the editor on a missing array/object. */
+function normalizeSelection(selection: Partial<ResumeSelection> | undefined): ResumeSelection {
+  return {
+    contact: selection?.contact ?? [...CONTACT_FIELDS],
+    jobs: selection?.jobs ?? {},
+    projects: selection?.projects ?? {},
+    education: selection?.education ?? [],
+    certifications: selection?.certifications ?? [],
+    technicalSkillCategories: selection?.technicalSkillCategories ?? [],
+  };
+}
+
 export function loadManifest(id: string): ResumeManifest | null {
   const manifestPath = findManifestPath(id);
   if (!manifestPath) return null;
-  return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const manifest: ResumeManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  return { ...manifest, selection: normalizeSelection(manifest.selection) };
 }
 
 export function writeManifest(folderPath: string, manifest: ResumeManifest): void {

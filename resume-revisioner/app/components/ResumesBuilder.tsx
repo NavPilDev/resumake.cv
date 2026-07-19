@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { ResumeFileBrowser } from "@/app/components/ResumeFileBrowser";
 import { ResumeSaveLocationModal } from "@/app/components/ResumeSaveLocationModal";
 import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
 import { cn } from "@/lib/utils";
+import { CONTACT_FIELDS } from "@/lib/contactFields";
 import type {
   ResumeManifest,
   ResumeSelection,
@@ -24,11 +26,53 @@ const EMPTY_EXPERIENCE: ExperienceData = {
 };
 
 function emptySelection(): ResumeSelection {
-  return { jobs: {}, projects: {}, education: [], certifications: [], technicalSkillCategories: [] };
+  return {
+    contact: [...CONTACT_FIELDS],
+    jobs: {},
+    projects: {},
+    education: [],
+    certifications: [],
+    technicalSkillCategories: [],
+  };
 }
+
+type SectionKey = "toc" | "contact" | "education" | "jobs" | "projects" | "certifications" | "skills";
 
 const sectionCardClass =
   "flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950";
+const simpleRowClass =
+  "flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-3 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200";
+const textareaClass =
+  "flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+
+function TocRow({ label, summary, onClick }: { label: string; summary: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+    >
+      <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{label}</span>
+      <span className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+        {summary}
+        <ChevronRight className="h-4 w-4" />
+      </span>
+    </button>
+  );
+}
+
+function SectionHeader({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <div className="mb-4 flex items-center gap-2">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+      >
+        <ChevronLeft className="h-4 w-4" /> All sections
+      </button>
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{label}</h3>
+    </div>
+  );
+}
 
 export default function ResumesBuilder() {
   const [experience, setExperience] = useState<ExperienceData>(EMPTY_EXPERIENCE);
@@ -39,6 +83,7 @@ export default function ResumesBuilder() {
   const [treeLoading, setTreeLoading] = useState(true);
 
   const [mode, setMode] = useState<"browse" | "create" | "edit">("browse");
+  const [activeSection, setActiveSection] = useState<SectionKey>("toc");
   const [resumeId, setResumeId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [selection, setSelection] = useState<ResumeSelection>(emptySelection());
@@ -100,6 +145,7 @@ export default function ResumesBuilder() {
 
   function startCreate() {
     setMode("create");
+    setActiveSection("toc");
     setResumeId(null);
     setTitle("");
     setSelection(emptySelection());
@@ -117,6 +163,7 @@ export default function ResumesBuilder() {
       if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
       const manifest = data as ResumeManifest;
       setMode("edit");
+      setActiveSection("toc");
       setResumeId(manifest.id);
       setTitle(manifest.title);
       setSelection(manifest.selection);
@@ -141,6 +188,14 @@ export default function ResumesBuilder() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create folder");
     }
+  }
+
+  function toggleContact(key: string) {
+    setSelection((prev) => {
+      const has = prev.contact.includes(key);
+      return { ...prev, contact: has ? prev.contact.filter((k) => k !== key) : [...prev.contact, key] };
+    });
+    setDirty(true);
   }
 
   function toggleJob(jobId: string, allBulletIds: string[]) {
@@ -284,10 +339,244 @@ export default function ResumesBuilder() {
   }
 
   const certifications = experience.certifications ?? [];
+  const skillCategories = Object.keys(experience.technical_skills);
+  const jobsIncludedCount = experience.jobs.filter((j) => j.id && selection.jobs[j.id]?.included).length;
+  const projectsIncludedCount = experience.projects.filter((p) => p.id && selection.projects[p.id]?.included).length;
+
+  function renderBulletRow(bulletId: string, sourceText: string, checked: boolean, onToggle: () => void) {
+    return (
+      <div key={bulletId} className="flex items-start gap-2">
+        <input type="checkbox" className="mt-2" checked={checked} onChange={onToggle} />
+        <textarea
+          value={textOverrides[bulletId] ?? sourceText}
+          onChange={(e) => setOverride(bulletId, e.target.value)}
+          rows={2}
+          className={textareaClass}
+        />
+      </div>
+    );
+  }
+
+  function renderToc() {
+    return (
+      <div className="flex flex-col gap-2">
+        <TocRow
+          label="Contact Info"
+          summary={`${selection.contact.length}/${CONTACT_FIELDS.length} fields`}
+          onClick={() => setActiveSection("contact")}
+        />
+        <TocRow
+          label="Education"
+          summary={`${selection.education.length}/${experience.education.length} included`}
+          onClick={() => setActiveSection("education")}
+        />
+        <TocRow
+          label="Work Experience"
+          summary={`${jobsIncludedCount}/${experience.jobs.length} included`}
+          onClick={() => setActiveSection("jobs")}
+        />
+        <TocRow
+          label="Projects"
+          summary={`${projectsIncludedCount}/${experience.projects.length} included`}
+          onClick={() => setActiveSection("projects")}
+        />
+        {certifications.length > 0 && (
+          <TocRow
+            label="Certifications"
+            summary={`${selection.certifications.length}/${certifications.length} included`}
+            onClick={() => setActiveSection("certifications")}
+          />
+        )}
+        <TocRow
+          label="Technical Skills"
+          summary={`${selection.technicalSkillCategories.length}/${skillCategories.length} categories`}
+          onClick={() => setActiveSection("skills")}
+        />
+      </div>
+    );
+  }
+
+  function renderContactSection() {
+    const fieldLabels: Record<(typeof CONTACT_FIELDS)[number], string> = {
+      email: "Email",
+      linkedin: "LinkedIn",
+      github: "GitHub",
+      website: "Website",
+    };
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeader label="Contact Info" onBack={() => setActiveSection("toc")} />
+        <p className={simpleRowClass}>
+          <span className="font-medium">Name:</span> {experience.meta.name || "(not set)"}{" "}
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">— always included</span>
+        </p>
+        {CONTACT_FIELDS.map((key) => (
+          <label key={key} className={simpleRowClass}>
+            <input
+              type="checkbox"
+              checked={selection.contact.includes(key)}
+              onChange={() => toggleContact(key)}
+            />
+            <span className="font-medium">{fieldLabels[key]}:</span>{" "}
+            {(experience.meta[key] as string) || "(not set)"}
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  function renderEducationSection() {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeader label="Education" onBack={() => setActiveSection("toc")} />
+        <div className="flex flex-col gap-2">
+          {experience.education.map(
+            (edu) =>
+              edu.id && (
+                <label key={edu.id} className={simpleRowClass}>
+                  <input
+                    type="checkbox"
+                    checked={selection.education.includes(edu.id)}
+                    onChange={() => toggleArrayMember("education", edu.id!)}
+                  />
+                  {edu.institution || edu.credential || "(untitled)"}
+                </label>
+              )
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderJobsSection() {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeader label="Work Experience" onBack={() => setActiveSection("toc")} />
+        <div className="flex flex-col gap-2">
+          {experience.jobs.map(
+            (job) =>
+              job.id && (
+                <div key={job.id} className={sectionCardClass}>
+                  <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    <input
+                      type="checkbox"
+                      checked={selection.jobs[job.id]?.included ?? false}
+                      onChange={() => toggleJob(job.id!, job.bullets.map((b) => b.id))}
+                    />
+                    {job.company || "(untitled)"} — {job.role}
+                  </label>
+                  {selection.jobs[job.id]?.included && (
+                    <div className="flex flex-col gap-2 pl-6">
+                      {job.bullets.map((b) =>
+                        renderBulletRow(
+                          b.id,
+                          b.text,
+                          selection.jobs[job.id!]?.bulletIds.includes(b.id) ?? false,
+                          () => toggleJobBullet(job.id!, b.id)
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderProjectsSection() {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeader label="Projects" onBack={() => setActiveSection("toc")} />
+        <div className="flex flex-col gap-2">
+          {experience.projects.map(
+            (project) =>
+              project.id && (
+                <div key={project.id} className={sectionCardClass}>
+                  <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    <input
+                      type="checkbox"
+                      checked={selection.projects[project.id]?.included ?? false}
+                      onChange={() => toggleProject(project.id!, project.bullets.map((b) => b.id))}
+                    />
+                    {project.name || "(untitled)"}
+                  </label>
+                  {selection.projects[project.id]?.included && (
+                    <div className="flex flex-col gap-2 pl-6">
+                      {project.bullets.map((b) =>
+                        renderBulletRow(
+                          b.id,
+                          b.text,
+                          selection.projects[project.id!]?.bulletIds.includes(b.id) ?? false,
+                          () => toggleProjectBullet(project.id!, b.id)
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderCertificationsSection() {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeader label="Certifications" onBack={() => setActiveSection("toc")} />
+        <div className="flex flex-col gap-2">
+          {certifications.map((cert) => (
+            <label key={cert.id} className={simpleRowClass}>
+              <input
+                type="checkbox"
+                checked={selection.certifications.includes(cert.id)}
+                onChange={() => toggleArrayMember("certifications", cert.id)}
+              />
+              {cert.name || "(untitled)"}
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSkillsSection() {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeader label="Technical Skills" onBack={() => setActiveSection("toc")} />
+        <div className="flex flex-col gap-2">
+          {skillCategories.map((category) => {
+            const entries = experience.technical_skills[category] ?? [];
+            return (
+              <label key={category} className={cn(simpleRowClass, "items-start")}>
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={selection.technicalSkillCategories.includes(category)}
+                  onChange={() => toggleArrayMember("technicalSkillCategories", category)}
+                />
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">{humanizeSkillCategory(category)}</span>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {entries.length > 0 ? entries.map((e) => e.skill).join(", ") : "No skills listed"}
+                  </span>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800" style={{ minHeight: 640 }}>
-      <div className="h-[70vh] w-64 shrink-0">
+    <div
+      className="flex overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
+      style={{ height: "calc(100vh - 220px)", minHeight: 560 }}
+    >
+      <div className="h-full w-64 shrink-0">
         <ResumeFileBrowser
           tree={tree}
           selectedId={resumeId}
@@ -297,7 +586,7 @@ export default function ResumesBuilder() {
         />
       </div>
 
-      <div className="min-w-0 flex-1 overflow-y-auto p-4">
+      <div className="min-w-0 flex-1 overflow-y-auto border-r border-zinc-200 p-6 dark:border-zinc-800">
         {mode === "browse" && (
           <div className="flex h-full items-center justify-center text-center text-sm text-zinc-500 dark:text-zinc-400">
             Select a saved resume on the left, or click the new-resume button to create one.
@@ -305,231 +594,79 @@ export default function ResumesBuilder() {
         )}
 
         {mode !== "browse" && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
-            <div className="flex flex-col gap-4">
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Work Experience</h3>
-                <div className="flex flex-col gap-2">
-                  {experience.jobs.map(
-                    (job) =>
-                      job.id && (
-                        <div key={job.id} className={sectionCardClass}>
-                          <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                            <input
-                              type="checkbox"
-                              checked={selection.jobs[job.id]?.included ?? false}
-                              onChange={() => toggleJob(job.id!, job.bullets.map((b) => b.id))}
-                            />
-                            {job.company || "(untitled)"} — {job.role}
-                          </label>
-                          {selection.jobs[job.id]?.included && (
-                            <div className="flex flex-col gap-2 pl-6">
-                              {job.bullets.map((b) => {
-                                const checked = selection.jobs[job.id!]?.bulletIds.includes(b.id) ?? false;
-                                return (
-                                  <div key={b.id} className="flex flex-col gap-1">
-                                    <label className="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-300">
-                                      <input
-                                        type="checkbox"
-                                        className="mt-0.5"
-                                        checked={checked}
-                                        onChange={() => toggleJobBullet(job.id!, b.id)}
-                                      />
-                                      <span>{b.text}</span>
-                                    </label>
-                                    {checked && (
-                                      <textarea
-                                        value={textOverrides[b.id] ?? b.text}
-                                        onChange={(e) => setOverride(b.id, e.target.value)}
-                                        rows={2}
-                                        className="ml-6 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Projects</h3>
-                <div className="flex flex-col gap-2">
-                  {experience.projects.map(
-                    (project) =>
-                      project.id && (
-                        <div key={project.id} className={sectionCardClass}>
-                          <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                            <input
-                              type="checkbox"
-                              checked={selection.projects[project.id]?.included ?? false}
-                              onChange={() => toggleProject(project.id!, project.bullets.map((b) => b.id))}
-                            />
-                            {project.name || "(untitled)"}
-                          </label>
-                          {selection.projects[project.id]?.included && (
-                            <div className="flex flex-col gap-2 pl-6">
-                              {project.bullets.map((b) => {
-                                const checked = selection.projects[project.id!]?.bulletIds.includes(b.id) ?? false;
-                                return (
-                                  <div key={b.id} className="flex flex-col gap-1">
-                                    <label className="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-300">
-                                      <input
-                                        type="checkbox"
-                                        className="mt-0.5"
-                                        checked={checked}
-                                        onChange={() => toggleProjectBullet(project.id!, b.id)}
-                                      />
-                                      <span>{b.text}</span>
-                                    </label>
-                                    {checked && (
-                                      <textarea
-                                        value={textOverrides[b.id] ?? b.text}
-                                        onChange={(e) => setOverride(b.id, e.target.value)}
-                                        rows={2}
-                                        className="ml-6 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Education</h3>
-                <div className="flex flex-col gap-2">
-                  {experience.education.map(
-                    (edu) =>
-                      edu.id && (
-                        <label
-                          key={edu.id}
-                          className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-3 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selection.education.includes(edu.id)}
-                            onChange={() => toggleArrayMember("education", edu.id!)}
-                          />
-                          {edu.institution || edu.credential || "(untitled)"}
-                        </label>
-                      )
-                  )}
-                </div>
-              </div>
-
-              {certifications.length > 0 && (
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Certifications</h3>
-                  <div className="flex flex-col gap-2">
-                    {certifications.map((cert) => (
-                      <label
-                        key={cert.id}
-                        className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-3 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selection.certifications.includes(cert.id)}
-                          onChange={() => toggleArrayMember("certifications", cert.id)}
-                        />
-                        {cert.name || "(untitled)"}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Technical Skills</h3>
-                <div className="flex flex-col gap-2">
-                  {Object.keys(experience.technical_skills).map((category) => (
-                    <label
-                      key={category}
-                      className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-3 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selection.technicalSkillCategories.includes(category)}
-                        onChange={() => toggleArrayMember("technicalSkillCategories", category)}
-                      />
-                      {humanizeSkillCategory(category)}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <aside className="sidebar-scroll flex flex-col gap-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto">
-              <div className="flex items-center gap-2">
-                {resumeId ? (
-                  <input
-                    value={title}
-                    onChange={(e) => {
-                      setTitle(e.target.value);
-                      setDirty(true);
-                    }}
-                    className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm font-medium text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                  />
-                ) : (
-                  <p className="flex-1 text-sm text-zinc-500 dark:text-zinc-400">New resume (unsaved)</p>
-                )}
-                <button
-                  onClick={handleSave}
-                  disabled={saving || !dirty}
-                  className={cn(
-                    "shrink-0 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50",
-                    dirty ? "bg-emerald-600 hover:bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-700"
-                  )}
-                >
-                  {saving ? "Saving…" : "Save"}
-                </button>
-              </div>
-
-              {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
-
-              <div className="aspect-[8.5/11] w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
-                {resumeId && lastCompileAt ? (
-                  <iframe
-                    src={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}`}
-                    className="h-full w-full"
-                    title="Resume preview"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                    Save to generate a preview.
-                  </div>
-                )}
-              </div>
-
-              {resumeId && (
-                <div className="flex gap-4 text-sm">
-                  <a
-                    href={`/api/resumes/${resumeId}/pdf?download=1`}
-                    className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-                  >
-                    Download PDF
-                  </a>
-                  <a
-                    href={`/api/resumes/${resumeId}/tex`}
-                    className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-                  >
-                    Download .tex
-                  </a>
-                </div>
-              )}
-            </aside>
-          </div>
+          <>
+            {activeSection === "toc" && renderToc()}
+            {activeSection === "contact" && renderContactSection()}
+            {activeSection === "education" && renderEducationSection()}
+            {activeSection === "jobs" && renderJobsSection()}
+            {activeSection === "projects" && renderProjectsSection()}
+            {activeSection === "certifications" && renderCertificationsSection()}
+            {activeSection === "skills" && renderSkillsSection()}
+          </>
         )}
       </div>
+
+      {mode !== "browse" && (
+        <aside className="flex w-[420px] shrink-0 flex-col gap-3 overflow-y-auto p-6">
+          <div className="flex items-center gap-2">
+            {resumeId ? (
+              <input
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  setDirty(true);
+                }}
+                className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm font-medium text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            ) : (
+              <p className="flex-1 text-sm text-zinc-500 dark:text-zinc-400">New resume (unsaved)</p>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={saving || !dirty}
+              className={cn(
+                "shrink-0 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50",
+                dirty ? "bg-emerald-600 hover:bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-700"
+              )}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+
+          {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+
+          <div className="aspect-[8.5/11] w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+            {resumeId && lastCompileAt ? (
+              <iframe
+                src={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}`}
+                className="h-full w-full"
+                title="Resume preview"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                Save to generate a preview.
+              </div>
+            )}
+          </div>
+
+          {resumeId && (
+            <div className="flex gap-4 text-sm">
+              <a
+                href={`/api/resumes/${resumeId}/pdf?download=1`}
+                className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+              >
+                Download PDF
+              </a>
+              <a
+                href={`/api/resumes/${resumeId}/tex`}
+                className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+              >
+                Download .tex
+              </a>
+            </div>
+          )}
+        </aside>
+      )}
 
       {showSaveModal && (
         <ResumeSaveLocationModal

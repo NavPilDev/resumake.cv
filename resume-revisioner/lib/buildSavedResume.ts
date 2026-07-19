@@ -79,8 +79,16 @@ export function selectionToTemplateInput(
     )
   );
 
+  const meta = {
+    name: experience.meta.name,
+    email: selection.contact.includes("email") ? experience.meta.email : "",
+    linkedin: selection.contact.includes("linkedin") ? experience.meta.linkedin : "",
+    github: selection.contact.includes("github") ? experience.meta.github : "",
+    website: selection.contact.includes("website") ? experience.meta.website : "",
+  };
+
   return {
-    meta: experience.meta,
+    meta,
     education,
     technicalSkills,
     jobs,
