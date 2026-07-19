@@ -15,3 +15,13 @@ export function resolveRepoPath(relative: string): string {
     `Could not find ${relative} (looked in the current working directory and its parent).`
   );
 }
+
+/** Resolves the repo root the same way regardless of whether anything at
+ * that path exists yet — unlike resolveRepoPath, which requires the target
+ * to already exist. Needed for anything that creates new files/dirs under
+ * the repo root (e.g. /saved) rather than reading something already there. */
+export function resolveRepoRoot(): string {
+  return path.basename(process.cwd()) === "resume-revisioner"
+    ? path.join(process.cwd(), "..")
+    : process.cwd();
+}

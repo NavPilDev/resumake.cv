@@ -1,5 +1,5 @@
 import { escapeLatex } from "./latexEscape";
-import type { EducationEntry, GenerateResumeSectionInput, TechnicalSkills } from "./types";
+import type { Certification, EducationEntry, GenerateResumeSectionInput, TechnicalSkills } from "./types";
 
 // Preamble copied verbatim from latex-resumes/master-resume.tex — that file
 // is the template this generator is meant to follow, so keep this in sync if
@@ -133,6 +133,7 @@ function buildHeader(meta: Meta): string {
 }
 
 function buildEducation(education: EducationEntry[]): string {
+  if (education.length === 0) return "";
   const entries = education
     .map(
       (e) => String.raw`    \resumeSubheading
@@ -200,9 +201,31 @@ ${entries}
  \vspace{-12pt}`;
 }
 
+function buildCertifications(certifications: Certification[]): string {
+  if (certifications.length === 0) return "";
+  const entries = certifications
+    .map((c) => {
+      const meta = [c.issuer, c.date]
+        .filter((x): x is string => Boolean(x))
+        .map(escapeLatex)
+        .join(" -- ");
+      return String.raw`    \resumeSubItem{\textbf{${escapeLatex(c.name)}}${meta ? ` (${meta})` : ""}}`;
+    })
+    .join("\n");
+
+  return String.raw`%-----------CERTIFICATIONS-----------
+\section{Certifications}
+  \resumeSubHeadingListStart
+${entries}
+  \resumeSubHeadingListEnd`;
+}
+
 function buildSkills(technicalSkills: TechnicalSkills): string {
-  const lines = Object.entries(technicalSkills)
-    .filter(([, entries]) => Array.isArray(entries) && entries.length > 0)
+  const entries = Object.entries(technicalSkills).filter(
+    ([, entries]) => Array.isArray(entries) && entries.length > 0
+  );
+  if (entries.length === 0) return "";
+  const lines = entries
     .map(([category, entries]) => {
       const skillList = entries.map((e) => escapeLatex(e.skill)).join(", ");
       return `     \\textbf{${humanizeCategory(category)}}{: ${skillList}} \\\\[1mm]`;
@@ -225,6 +248,9 @@ export interface BuildResumeTexInput {
   technicalSkills: TechnicalSkills;
   jobs: GenerateResumeSectionInput[];
   projects: GenerateResumeSectionInput[];
+  /** Optional — existing callers (e.g. the JD-tailoring flow) that don't
+   * pass this render no certifications section, unchanged from before. */
+  certifications?: Certification[];
 }
 
 export function buildResumeTex(input: BuildResumeTexInput): string {
@@ -236,6 +262,7 @@ export function buildResumeTex(input: BuildResumeTexInput): string {
     buildHeader(input.meta),
     "",
     buildEducation(input.education),
+    input.certifications?.length ? buildCertifications(input.certifications) : "",
     buildExperience(input.jobs),
     buildProjects(input.projects),
     buildSkills(input.technicalSkills),

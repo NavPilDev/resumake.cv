@@ -3,6 +3,7 @@
 import { useState } from "react";
 import BulletCard from "@/app/components/BulletCard";
 import ExperienceBuilder from "@/app/components/ExperienceBuilder";
+import ResumesBuilder from "@/app/components/ResumesBuilder";
 import type {
   AnalyzeMode,
   AnalyzeProgressEvent,
@@ -39,7 +40,7 @@ function genStageLabel(stage: "compiling" | "trimming" | "finalizing" | undefine
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"tailor" | "experience">("tailor");
+  const [activeTab, setActiveTab] = useState<"tailor" | "experience" | "resumes">("tailor");
   const [jdText, setJdText] = useState("");
   const [maxBullets, setMaxBullets] = useState(4);
   const [mode, setMode] = useState<AnalyzeMode>("keyword");
@@ -246,13 +247,18 @@ export default function Home() {
                 ) by keyword overlap and surface skill gaps. Nothing is written back to your resume —
                 review and copy in the bullets you want.
               </>
-            ) : (
+            ) : activeTab === "experience" ? (
               <>
                 Build or edit your{" "}
                 <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
                   experience.yaml
                 </code>{" "}
                 bullet bank from uploads, pasted text, or the form below.
+              </>
+            ) : (
+              <>
+                Create and edit individual tailored resumes, organized into folders under{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">saved/</code>.
               </>
             )}
           </p>
@@ -278,10 +284,22 @@ export default function Home() {
             >
               My Experience
             </button>
+            <button
+              onClick={() => setActiveTab("resumes")}
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === "resumes"
+                  ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              My Resumes
+            </button>
           </div>
         </header>
 
         {activeTab === "experience" && <ExperienceBuilder />}
+
+        {activeTab === "resumes" && <ResumesBuilder />}
 
         {activeTab === "tailor" && (
           <>

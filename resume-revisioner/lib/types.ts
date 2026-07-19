@@ -6,6 +6,10 @@ export interface Bullet {
 }
 
 export interface JobEntry {
+  /** Stable identifier for referencing this job from outside experience.yaml
+   * (e.g. a saved resume's section selection). Backfilled on read for
+   * entries that predate this field — see GET /api/experience. */
+  id?: string;
   company: string;
   role: string;
   dates: string;
@@ -34,6 +38,8 @@ export interface ProjectLink {
 }
 
 export interface ProjectEntry {
+  /** Stable identifier — see JobEntry.id. */
+  id?: string;
   name: string;
   dates: string;
   date_confidence: string;
@@ -43,6 +49,8 @@ export interface ProjectEntry {
 }
 
 export interface EducationEntry {
+  /** Stable identifier — see JobEntry.id. */
+  id?: string;
   institution: string;
   credential: string;
   /** Structured facets of `credential`, e.g. "Bachelor's" / "Computer Science". */
@@ -284,4 +292,8 @@ export interface SaveExperienceResponse {
 export interface GetExperienceResponse {
   experience: ExperienceData;
   isNew: boolean;
+  /** True if any job/project/education entry was missing a stable `id` and
+   * had one backfilled in-memory for this response — the frontend should
+   * immediately re-save once to persist the backfilled ids to disk. */
+  idsBackfilled: boolean;
 }
