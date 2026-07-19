@@ -11,6 +11,7 @@ import type {
   Bullet,
   Certification,
   EducationEntry,
+  ExperienceData,
   ExtractedExperienceFragment,
   ExtractExperienceResponse,
   JobEntry,
@@ -21,23 +22,44 @@ import type {
   TechnicalSkills,
 } from "@/lib/types";
 
-export interface AcceptedFragment {
-  meta?: Partial<Meta>;
-  jobs: JobEntry[];
-  projects: ProjectEntry[];
-  education: EducationEntry[];
-  certifications: Certification[];
-  technical_skills?: TechnicalSkills;
-}
-
 interface ExperienceUploadPanelProps {
+  experience: ExperienceData;
+  onChange: (patch: Partial<ExperienceData>) => void;
   ollamaModel: string;
   ollamaHost: string;
-  onAccept: (fragment: AcceptedFragment) => void;
 }
 
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function emptyJob(): JobEntry {
+  return { company: "", role: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
+}
+
+function emptyProject(): ProjectEntry {
+  return { name: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
+}
+
+function emptyEducation(): EducationEntry {
+  return { institution: "", credential: "", dates: "", date_confidence: "unknown", included: true };
+}
+
+function emptyCertification(): Certification {
+  return { id: makeId("cert"), name: "", included: true };
+}
+
+/** Unions technical skills already saved with newly-extracted ones, deduping
+ * by lowercased skill name within each category. */
+function mergeTechnicalSkills(base: TechnicalSkills, incoming?: TechnicalSkills): TechnicalSkills {
+  if (!incoming) return base;
+  const merged: TechnicalSkills = { ...base };
+  for (const [category, skills] of Object.entries(incoming)) {
+    const existing = merged[category] ?? [];
+    const existingNames = new Set(existing.map((s) => s.skill.toLowerCase()));
+    merged[category] = [...existing, ...skills.filter((s) => !existingNames.has(s.skill.toLowerCase()))];
+  }
+  return merged;
 }
 
 /** The model doesn't always return array-typed fields as arrays (e.g. a
@@ -86,12 +108,21 @@ function mergeTechnicalSkillsAcrossSources(sources: TechnicalSkills[]): Technica
   return merged;
 }
 
+const PLACEHOLDER_TAG_TOKENS = new Set(["short-kebab-case-skill", "..."]);
+
+/** Filters out the extraction prompt's own JSON-shape example tokens, which
+ * a small local model sometimes echoes back literally instead of a real
+ * skill/tech tag. */
+function normalizeTags(value: unknown): string[] {
+  return normalizeStringArray(value).filter((tag) => !PLACEHOLDER_TAG_TOKENS.has(tag.trim().toLowerCase()));
+}
+
 function normalizeBullets(bullets: Partial<Bullet>[] | undefined): Bullet[] {
   if (!Array.isArray(bullets)) return [];
   return bullets.map((b) => ({
     id: makeId("bullet"),
     text: typeof b.text === "string" ? b.text : "",
-    tags: normalizeStringArray(b.tags),
+    tags: normalizeTags(b.tags),
     has_metric: b.has_metric === true,
   }));
 }
@@ -124,6 +155,39 @@ function normalizeJobDate(value: string | undefined): string | undefined {
   return undefined;
 }
 
+const MONTH_NUMBERS: Record<string, string> = {
+  jan: "01", january: "01", feb: "02", february: "02", mar: "03", march: "03",
+  apr: "04", april: "04", may: "05", jun: "06", june: "06", jul: "07", july: "07",
+  aug: "08", august: "08", sep: "09", sept: "09", september: "09",
+  oct: "10", october: "10", nov: "11", november: "11", dec: "12", december: "12",
+};
+const MONTH_YEAR_RE = /([A-Za-z]{3,9})\.?\s+(\d{4})/;
+const PRESENT_RE = /present|current/i;
+
+/** Best-effort fallback for when the model returns a free-text `dates`
+ * string (e.g. "Mar 2023 - Nov 2023") but omits start_date/end_date
+ * entirely — not a general date parser, just the common resume patterns
+ * ("Mon YYYY - Mon YYYY", full month names, "Mon YYYY - Present"/"Current").
+ * English month names only. Never guesses: returns {} if it can't
+ * confidently find a month + year on the start side. */
+function parseDatesFromDisplayString(dates: string): { start?: string; end?: string } {
+  const [rawStart, rawEnd] = dates.split(/[–—-]/).map((s) => s.trim());
+  if (!rawStart) return {};
+
+  const startMatch = MONTH_YEAR_RE.exec(rawStart);
+  const startMonth = startMatch && MONTH_NUMBERS[startMatch[1].toLowerCase()];
+  if (!startMatch || !startMonth) return {};
+  const start = `${startMatch[2]}-${startMonth}-01`;
+
+  if (!rawEnd) return { start };
+  if (PRESENT_RE.test(rawEnd)) return { start, end: "present" };
+
+  const endMatch = MONTH_YEAR_RE.exec(rawEnd);
+  const endMonth = endMatch && MONTH_NUMBERS[endMatch[1].toLowerCase()];
+  if (!endMatch || !endMonth) return { start };
+  return { start, end: `${endMatch[2]}-${endMonth}-01` };
+}
+
 /** Drops blank fields and placeholder {platform:"",url:""} social-link
  * entries the model sometimes echoes back from the prompt's example shape
  * even when nothing was actually found in the source text. */
@@ -142,12 +206,17 @@ function normalizeMeta(meta: Partial<Meta> | undefined): Partial<Meta> {
 }
 
 function buildJobEntry(j: NonNullable<ExtractedExperienceFragment["jobs"]>[number]): JobEntry {
+  const dates = j.dates ?? "";
+  const normalizedStart = normalizeJobDate(j.start_date);
+  const normalizedEnd = normalizeJobDate(j.end_date);
+  const fallback = !normalizedStart || !normalizedEnd ? parseDatesFromDisplayString(dates) : {};
+
   return {
     company: j.company ?? "",
     role: j.role ?? "",
-    dates: j.dates ?? "",
-    start_date: normalizeJobDate(j.start_date),
-    end_date: normalizeJobDate(j.end_date),
+    dates,
+    start_date: normalizedStart ?? fallback.start,
+    end_date: normalizedEnd ?? fallback.end,
     date_confidence: j.date_confidence ?? "unknown",
     location: j.location,
     work_mode: j.work_mode,
@@ -311,16 +380,14 @@ function mergeMetaAcrossSources(
   return { meta: merged, conflicts };
 }
 
+/** What's left to resolve after an extraction — everything unambiguous is
+ * merged straight into the live experience data; only genuine disagreements
+ * between attachments (a contact field, or two versions of what looks like
+ * the same job/project) wait here for a decision. */
 interface PendingReview {
-  meta: Partial<Meta>;
   metaConflicts: MetaFieldConflict[];
-  jobs: Sourced<JobEntry>[];
   jobGroups: EntryGroup<JobEntry>[];
-  projects: Sourced<ProjectEntry>[];
   projectGroups: EntryGroup<ProjectEntry>[];
-  education: Sourced<EducationEntry>[];
-  certifications: Sourced<Certification>[];
-  technical_skills: TechnicalSkills;
 }
 
 type CompareModalState =
@@ -328,10 +395,13 @@ type CompareModalState =
   | { kind: "project"; group: EntryGroup<ProjectEntry> }
   | null;
 
-type ListField = "jobs" | "projects" | "education" | "certifications";
-
 const inputClass =
   "w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+const labelClass = "flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400";
+const sectionClass =
+  "flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950";
+const addButtonClass =
+  "self-start rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
 const META_FIELD_LABELS: Record<MetaTextField, string> = {
   name: "name",
@@ -342,7 +412,12 @@ const META_FIELD_LABELS: Record<MetaTextField, string> = {
   website: "website",
 };
 
-export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccept }: ExperienceUploadPanelProps) {
+export default function ExperienceUploadPanel({
+  experience,
+  onChange,
+  ollamaModel,
+  ollamaHost,
+}: ExperienceUploadPanelProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [dropzoneKey, setDropzoneKey] = useState(0);
   const [pastedText, setPastedText] = useState("");
@@ -351,6 +426,7 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractWarnings, setExtractWarnings] = useState<string[]>([]);
   const [sourceErrors, setSourceErrors] = useState<{ label: string; message: string }[]>([]);
+  const [addedSummary, setAddedSummary] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingReview | null>(null);
   const [compareModal, setCompareModal] = useState<CompareModalState>(null);
 
@@ -369,6 +445,7 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
     setExtractError(null);
     setExtractWarnings([]);
     setSourceErrors([]);
+    setAddedSummary(null);
 
     const results: { label: string; fragment: ExtractedExperienceFragment }[] = [];
     const warnings: string[] = [];
@@ -436,90 +513,66 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
     const { resolved: jobs, groups: jobGroups } = groupBySourceKey(allJobs, jobDedupKey);
     const { resolved: projects, groups: projectGroups } = groupBySourceKey(allProjects, projectDedupKey);
 
-    setPending({
-      meta,
-      metaConflicts: conflicts,
-      jobs,
-      jobGroups,
-      projects,
-      projectGroups,
-      education,
-      certifications,
-      technical_skills,
+    onChange({
+      meta: { ...experience.meta, ...meta },
+      jobs: [...experience.jobs, ...jobs.map((j) => j.entry)],
+      projects: [...experience.projects, ...projects.map((p) => p.entry)],
+      education: [...experience.education, ...education.map((e) => e.entry)],
+      certifications: [...(experience.certifications ?? []), ...certifications.map((c) => c.entry)],
+      technical_skills: mergeTechnicalSkills(experience.technical_skills, technical_skills),
     });
+
+    const addedCount = jobs.length + projects.length + education.length + certifications.length;
+    setAddedSummary(
+      addedCount > 0
+        ? `Added ${addedCount} item${addedCount === 1 ? "" : "s"} to your experience below.`
+        : "Nothing new was extracted from that source."
+    );
+
+    setPending(
+      conflicts.length > 0 || jobGroups.length > 0 || projectGroups.length > 0
+        ? { metaConflicts: conflicts, jobGroups, projectGroups }
+        : null
+    );
+
+    setFiles([]);
+    setPastedText("");
+    setDropzoneKey((k) => k + 1);
     setExtracting(false);
   }
 
   function resolveJobGroup(key: string, chosen: Sourced<JobEntry>) {
-    setPending((prev) =>
-      prev
-        ? { ...prev, jobs: [...prev.jobs, chosen], jobGroups: prev.jobGroups.filter((g) => g.key !== key) }
-        : prev
-    );
+    onChange({ jobs: [...experience.jobs, chosen.entry] });
+    setPending((prev) => (prev ? { ...prev, jobGroups: prev.jobGroups.filter((g) => g.key !== key) } : prev));
     setCompareModal(null);
   }
 
   function resolveProjectGroup(key: string, chosen: Sourced<ProjectEntry>) {
+    onChange({ projects: [...experience.projects, chosen.entry] });
     setPending((prev) =>
-      prev
-        ? {
-            ...prev,
-            projects: [...prev.projects, chosen],
-            projectGroups: prev.projectGroups.filter((g) => g.key !== key),
-          }
-        : prev
+      prev ? { ...prev, projectGroups: prev.projectGroups.filter((g) => g.key !== key) } : prev
     );
     setCompareModal(null);
   }
 
-  function updateMetaField(field: MetaTextField, value: string) {
-    setPending((prev) => (prev ? { ...prev, meta: { ...prev.meta, [field]: value } } : prev));
+  function updateMetaConflictChoice(field: MetaTextField, value: string) {
+    onChange({ meta: { ...experience.meta, [field]: value } });
   }
 
-  function updateList<K extends ListField>(key: K, next: PendingReview[K]) {
-    setPending((prev) => (prev ? { ...prev, [key]: next } : prev));
-  }
-
-  const hasUnresolvedGroups = !!pending && (pending.jobGroups.length > 0 || pending.projectGroups.length > 0);
-
-  function acceptAll() {
-    if (!pending || hasUnresolvedGroups) return;
-    onAccept({
-      meta: pending.meta,
-      jobs: pending.jobs.map((j) => j.entry),
-      projects: pending.projects.map((p) => p.entry),
-      education: pending.education.map((e) => e.entry),
-      certifications: pending.certifications.map((c) => c.entry),
-      technical_skills: pending.technical_skills,
-    });
-    setPending(null);
-    setFiles([]);
-    setPastedText("");
-    setDropzoneKey((k) => k + 1);
-  }
-
-  function discardAll() {
+  function dismissConflicts() {
     setPending(null);
   }
 
-  const hasPendingContent =
-    !!pending &&
-    (pending.jobs.length > 0 ||
-      pending.jobGroups.length > 0 ||
-      pending.projects.length > 0 ||
-      pending.projectGroups.length > 0 ||
-      pending.education.length > 0 ||
-      pending.certifications.length > 0 ||
-      Object.keys(pending.meta).length > 0 ||
-      Object.keys(pending.technical_skills).length > 0);
+  const certifications = experience.certifications ?? [];
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+    <>
+    <section className={sectionClass}>
       <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Import from files or pasted text</h2>
       <p className="text-xs text-zinc-500 dark:text-zinc-400">
         Upload one or more resume PDFs, Markdown/JSON exports, or paste text describing your experience. A
-        local Ollama model extracts structured entries for you to review — nothing is added until you
-        accept it below.
+        local Ollama model extracts structured entries directly into the sections below — you&apos;ll only
+        be asked here to resolve anything your attachments disagree on.
       </p>
 
       <AnimatedFileUpload
@@ -565,50 +618,24 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
           ))}
         </ul>
       )}
+      {addedSummary && <p className="text-sm text-emerald-700 dark:text-emerald-400">{addedSummary}</p>}
 
       {pending && (
-        <div className="mt-2 flex flex-col gap-4 rounded-md border border-violet-200 bg-violet-50 p-3 dark:border-violet-800 dark:bg-violet-950/30">
+        <div className="mt-2 flex flex-col gap-4 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-violet-900 dark:text-violet-200">
-              Review before adding
+            <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+              Your attachments disagreed on some things — resolve below (everything else was already added)
             </p>
-            <div className="flex gap-2">
-              <button
-                onClick={acceptAll}
-                disabled={!hasPendingContent || hasUnresolvedGroups}
-                className="rounded bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50"
-              >
-                Add all accepted items
-              </button>
-              <button
-                onClick={discardAll}
-                className="rounded border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Discard all
-              </button>
-            </div>
+            <button
+              onClick={dismissConflicts}
+              className="rounded border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Dismiss
+            </button>
           </div>
 
-          {hasUnresolvedGroups && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              Resolve the {pending.jobGroups.length + pending.projectGroups.length} version conflict(s) below
-              before adding.
-            </p>
-          )}
-
-          {!hasPendingContent && (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Nothing was extracted from that source — try a different file or add more detail to the
-              pasted text.
-            </p>
-          )}
-
           {pending.metaConflicts.length > 0 && (
-            <div className="flex flex-col gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
-              <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-                Your attachments disagree on {pending.metaConflicts.length === 1 ? "this field" : "these fields"} —
-                pick which value to keep.
-              </p>
+            <div className="flex flex-col gap-3">
               {pending.metaConflicts.map((conflict) => (
                 <div key={conflict.field} className="flex flex-col gap-1.5">
                   <p className="text-xs font-semibold capitalize text-amber-900 dark:text-amber-200">
@@ -623,8 +650,8 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
                         <input
                           type="radio"
                           name={`meta-conflict-${conflict.field}`}
-                          checked={pending.meta[conflict.field] === candidate.value}
-                          onChange={() => updateMetaField(conflict.field, candidate.value)}
+                          checked={experience.meta[conflict.field] === candidate.value}
+                          onChange={() => updateMetaConflictChoice(conflict.field, candidate.value)}
                         />
                         <span className="font-medium text-zinc-900 dark:text-zinc-100">{candidate.value}</span>
                         <span className="text-zinc-500 dark:text-zinc-400">— from {candidate.source}</span>
@@ -636,28 +663,10 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
             </div>
           )}
 
-          {Object.keys(pending.meta).length > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-violet-800 dark:text-violet-300">Contact info found</p>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {META_TEXT_FIELDS.filter((key) => pending.meta[key] !== undefined).map((key) => (
-                  <label key={key} className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                    {key}
-                    <input
-                      className={inputClass}
-                      value={(pending.meta[key] as string) ?? ""}
-                      onChange={(e) => updateMetaField(key, e.target.value)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
           {pending.jobGroups.map((group) => (
             <div
               key={group.key}
-              className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30"
+              className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-100/60 p-3 dark:border-amber-700 dark:bg-amber-950/50"
             >
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 {group.versions[0].entry.company} — {group.versions[0].entry.role}
@@ -674,31 +683,10 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
             </div>
           ))}
 
-          {pending.jobs.map((item, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
-              <JobEntryRow
-                job={item.entry}
-                onChange={(next) =>
-                  updateList(
-                    "jobs",
-                    pending.jobs.map((j, ji) => (ji === i ? { ...j, entry: next } : j))
-                  )
-                }
-                onRemove={() =>
-                  updateList(
-                    "jobs",
-                    pending.jobs.filter((_, ji) => ji !== i)
-                  )
-                }
-              />
-            </div>
-          ))}
-
           {pending.projectGroups.map((group) => (
             <div
               key={group.key}
-              className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30"
+              className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-100/60 p-3 dark:border-amber-700 dark:bg-amber-950/50"
             >
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{group.versions[0].entry.name}</p>
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
@@ -712,108 +700,257 @@ export default function ExperienceUploadPanel({ ollamaModel, ollamaHost, onAccep
               </button>
             </div>
           ))}
-
-          {pending.projects.map((item, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
-              <ProjectEntryRow
-                project={item.entry}
-                onChange={(next) =>
-                  updateList(
-                    "projects",
-                    pending.projects.map((p, pi) => (pi === i ? { ...p, entry: next } : p))
-                  )
-                }
-                onRemove={() =>
-                  updateList(
-                    "projects",
-                    pending.projects.filter((_, pi) => pi !== i)
-                  )
-                }
-              />
-            </div>
-          ))}
-
-          {pending.education.map((item, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
-              <EducationEntryRow
-                education={item.entry}
-                onChange={(next) =>
-                  updateList(
-                    "education",
-                    pending.education.map((e, ei) => (ei === i ? { ...e, entry: next } : e))
-                  )
-                }
-                onRemove={() =>
-                  updateList(
-                    "education",
-                    pending.education.filter((_, ei) => ei !== i)
-                  )
-                }
-              />
-            </div>
-          ))}
-
-          {pending.certifications.map((item, i) => (
-            <div key={item.entry.id} className="flex flex-col gap-1">
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">From: {item.source}</p>
-              <CertificationRow
-                certification={item.entry}
-                onChange={(next) =>
-                  updateList(
-                    "certifications",
-                    pending.certifications.map((c, ci) => (ci === i ? { ...c, entry: next } : c))
-                  )
-                }
-                onRemove={() =>
-                  updateList(
-                    "certifications",
-                    pending.certifications.filter((_, ci) => ci !== i)
-                  )
-                }
-              />
-            </div>
-          ))}
-
-          {Object.keys(pending.technical_skills).length > 0 && (
-            <div>
-              <p className="mb-1 text-xs font-medium text-violet-800 dark:text-violet-300">
-                Technical skills found (merged in as-is on accept)
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {Object.entries(pending.technical_skills).flatMap(([category, skills]) =>
-                  skills.map((s) => (
-                    <span
-                      key={`${category}-${s.skill}`}
-                      className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-                    >
-                      {s.skill}
-                    </span>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
         </div>
       )}
-
-      {compareModal?.kind === "job" && (
-        <JobVersionCompareModal
-          title={`${compareModal.group.versions[0].entry.company} — ${compareModal.group.versions[0].entry.role}`}
-          versions={compareModal.group.versions}
-          onSelect={(version) => resolveJobGroup(compareModal.group.key, version)}
-          onClose={() => setCompareModal(null)}
-        />
-      )}
-      {compareModal?.kind === "project" && (
-        <ProjectVersionCompareModal
-          title={compareModal.group.versions[0].entry.name}
-          versions={compareModal.group.versions}
-          onSelect={(version) => resolveProjectGroup(compareModal.group.key, version)}
-          onClose={() => setCompareModal(null)}
-        />
-      )}
     </section>
+
+    <section id="exp-section-contact" className={sectionClass}>
+      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Contact info</h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className={labelClass}>
+          Name
+          <input
+            className={inputClass}
+            value={experience.meta.name}
+            onChange={(e) => onChange({ meta: { ...experience.meta, name: e.target.value } })}
+          />
+        </label>
+        <label className={labelClass}>
+          Email
+          <input
+            className={inputClass}
+            value={experience.meta.email}
+            onChange={(e) => onChange({ meta: { ...experience.meta, email: e.target.value } })}
+          />
+        </label>
+        <label className={labelClass}>
+          Phone
+          <input
+            className={inputClass}
+            value={experience.meta.phone ?? ""}
+            onChange={(e) => onChange({ meta: { ...experience.meta, phone: e.target.value || undefined } })}
+          />
+        </label>
+        <label className={labelClass}>
+          LinkedIn
+          <input
+            className={inputClass}
+            value={experience.meta.linkedin}
+            onChange={(e) => onChange({ meta: { ...experience.meta, linkedin: e.target.value } })}
+          />
+        </label>
+        <label className={labelClass}>
+          GitHub
+          <input
+            className={inputClass}
+            value={experience.meta.github}
+            onChange={(e) => onChange({ meta: { ...experience.meta, github: e.target.value } })}
+          />
+        </label>
+        <label className={labelClass}>
+          Website
+          <input
+            className={inputClass}
+            value={experience.meta.website}
+            onChange={(e) => onChange({ meta: { ...experience.meta, website: e.target.value } })}
+          />
+        </label>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          Other social/portfolio links (stored for reference only — never fetched)
+        </p>
+        <div className="flex flex-col gap-2">
+          {(experience.meta.social_links ?? []).map((link, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2">
+              <input
+                className={`${inputClass} w-32`}
+                placeholder="Instagram"
+                value={link.platform}
+                onChange={(e) => {
+                  const links = [...(experience.meta.social_links ?? [])];
+                  links[i] = { ...links[i], platform: e.target.value };
+                  onChange({ meta: { ...experience.meta, social_links: links } });
+                }}
+              />
+              <input
+                className={`${inputClass} min-w-[12rem] flex-1`}
+                placeholder="https://…"
+                value={link.url}
+                onChange={(e) => {
+                  const links = [...(experience.meta.social_links ?? [])];
+                  links[i] = { ...links[i], url: e.target.value };
+                  onChange({ meta: { ...experience.meta, social_links: links } });
+                }}
+              />
+              <button
+                onClick={() => {
+                  const links = (experience.meta.social_links ?? []).filter((_, li) => li !== i);
+                  onChange({ meta: { ...experience.meta, social_links: links } });
+                }}
+                className="text-xs text-red-600 underline hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() =>
+              onChange({
+                meta: {
+                  ...experience.meta,
+                  social_links: [...(experience.meta.social_links ?? []), { platform: "", url: "" }],
+                },
+              })
+            }
+            className={addButtonClass}
+          >
+            + Add link
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="exp-section-jobs" className={sectionClass}>
+      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Work experience</h2>
+      <div className="flex flex-col gap-4">
+        {experience.jobs.map((job, i) => (
+          <div key={i} id={`exp-job-${i}`}>
+            <JobEntryRow
+              job={job}
+              onChange={(next) => onChange({ jobs: experience.jobs.map((j, ji) => (ji === i ? next : j)) })}
+              onRemove={() => onChange({ jobs: experience.jobs.filter((_, ji) => ji !== i) })}
+            />
+          </div>
+        ))}
+      </div>
+      <button onClick={() => onChange({ jobs: [...experience.jobs, emptyJob()] })} className={addButtonClass}>
+        + Add job
+      </button>
+    </section>
+
+    <section id="exp-section-projects" className={sectionClass}>
+      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Projects</h2>
+      <div className="flex flex-col gap-4">
+        {experience.projects.map((project, i) => (
+          <div key={i} id={`exp-project-${i}`}>
+            <ProjectEntryRow
+              project={project}
+              onChange={(next) =>
+                onChange({ projects: experience.projects.map((p, pi) => (pi === i ? next : p)) })
+              }
+              onRemove={() => onChange({ projects: experience.projects.filter((_, pi) => pi !== i) })}
+            />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => onChange({ projects: [...experience.projects, emptyProject()] })}
+        className={addButtonClass}
+      >
+        + Add project
+      </button>
+    </section>
+
+    <section id="exp-section-education" className={sectionClass}>
+      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Education</h2>
+      <div className="flex flex-col gap-4">
+        {experience.education.map((education, i) => (
+          <div key={i} id={`exp-edu-${i}`}>
+            <EducationEntryRow
+              education={education}
+              onChange={(next) =>
+                onChange({ education: experience.education.map((e, ei) => (ei === i ? next : e)) })
+              }
+              onRemove={() => onChange({ education: experience.education.filter((_, ei) => ei !== i) })}
+            />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => onChange({ education: [...experience.education, emptyEducation()] })}
+        className={addButtonClass}
+      >
+        + Add education
+      </button>
+    </section>
+
+    <section id="exp-section-certifications" className={sectionClass}>
+      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Certifications</h2>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        Not yet included in generated resumes — tracked here for your records and future use.
+      </p>
+      <div className="flex flex-col gap-4">
+        {certifications.map((cert, i) => (
+          <div key={cert.id} id={`exp-cert-${cert.id}`}>
+            <CertificationRow
+              certification={cert}
+              onChange={(next) => onChange({ certifications: certifications.map((c, ci) => (ci === i ? next : c)) })}
+              onRemove={() => onChange({ certifications: certifications.filter((_, ci) => ci !== i) })}
+            />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => onChange({ certifications: [...certifications, emptyCertification()] })}
+        className={addButtonClass}
+      >
+        + Add certification
+      </button>
+    </section>
+
+    <section id="exp-section-skills" className={sectionClass}>
+      <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Technical skills</h2>
+      <div className="flex flex-col gap-3">
+        {Object.entries(experience.technical_skills).map(([category, skills]) => (
+          <div key={category}>
+            <p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{category}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {skills.map((s, si) => (
+                <span
+                  key={s.skill}
+                  className="flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                >
+                  {s.skill}
+                  <button
+                    onClick={() =>
+                      onChange({
+                        technical_skills: {
+                          ...experience.technical_skills,
+                          [category]: skills.filter((_, i2) => i2 !== si),
+                        },
+                      })
+                    }
+                    className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200"
+                    aria-label={`Remove ${s.skill}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    {compareModal?.kind === "job" && (
+      <JobVersionCompareModal
+        title={`${compareModal.group.versions[0].entry.company} — ${compareModal.group.versions[0].entry.role}`}
+        versions={compareModal.group.versions}
+        onSelect={(version) => resolveJobGroup(compareModal.group.key, version)}
+        onClose={() => setCompareModal(null)}
+      />
+    )}
+    {compareModal?.kind === "project" && (
+      <ProjectVersionCompareModal
+        title={compareModal.group.versions[0].entry.name}
+        versions={compareModal.group.versions}
+        onSelect={(version) => resolveProjectGroup(compareModal.group.key, version)}
+        onClose={() => setCompareModal(null)}
+      />
+    )}
+    </>
   );
 }

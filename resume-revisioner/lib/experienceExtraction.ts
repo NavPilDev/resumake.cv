@@ -7,6 +7,10 @@ const EXTRACTION_SYSTEM_NOTE = `
 Extract only facts explicitly present in the source text below — never invent
 employers, dates, metrics, GPA, or skills. Omit a field entirely if the
 source doesn't state it; do not guess or pad with plausible-sounding values.
+If the source text contains no job, project, or education content at all —
+for example, a file that only lists contact info or social media links —
+do not invent any. Omit the jobs/projects/education/certifications keys
+entirely rather than fabricating an entry to fill them.
 If the source is a narrative paragraph rather than already-bulleted content,
 phrase each "bullets[].text" as a resume-style bullet: past tense,
 action-verb led, one sentence. Do NOT include "id" on any bullet or
@@ -25,7 +29,7 @@ including an empty or placeholder-filled array.
 TARGET JSON SHAPE (include only the top-level keys you actually found data for):
 {
   "meta": { "name", "email", "phone", "linkedin", "github", "website", "social_links": [{ "platform", "url" }] },
-  "jobs": [{ "company", "role", "dates" (free text like "Jan 2023 - Present"), "start_date" ("YYYY-MM-DD"), "end_date" ("YYYY-MM-DD" or "present"), "location", "work_mode" ("Remote"/"Hybrid"/"On-site"), "hours_per_week" (number), "pay_plan", "pay_series", "pay_grade" (government roles only), "bullets": [{ "text", "tags": ["short-kebab-case-skill", "..."], "has_metric": boolean }] }],
+  "jobs": [{ "company", "role", "dates" (free text like "Jan 2023 - Present"), "start_date" ("YYYY-MM-DD"), "end_date" ("YYYY-MM-DD" or "present"), "location", "work_mode" ("Remote"/"Hybrid"/"On-site"), "hours_per_week" (number), "pay_plan", "pay_series", "pay_grade" (government roles only), "bullets": [{ "text", "tags" (technologies/skills mentioned in that bullet, short kebab-case, e.g. "python"/"rest-api" — omit if none), "has_metric": boolean }] }],
   "projects": [{ "name", "dates", "links": [{ "name", "href" }], "bullets": [{ "text", "tags", "has_metric" }] }],
   "education": [{ "institution", "credential" (e.g. "Bachelor of Science - Computer Science"), "degree_level", "major", "dates", "graduation_date" ("YYYY-MM"), "gpa" (string), "location", "details" (array of notable courses/honors actually named in the source, one per string; omit if none named) }],
   "certifications": [{ "name", "issuer", "date" ("YYYY-MM"), "expiration_date", "credential_id" }],

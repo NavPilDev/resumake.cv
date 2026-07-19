@@ -1,22 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import CertificationRow from "@/app/components/CertificationRow";
-import EducationEntryRow from "@/app/components/EducationEntryRow";
-import type { AcceptedFragment } from "@/app/components/ExperienceUploadPanel";
 import ExperienceUploadPanel from "@/app/components/ExperienceUploadPanel";
-import JobEntryRow from "@/app/components/JobEntryRow";
-import ProjectEntryRow from "@/app/components/ProjectEntryRow";
-import type {
-  Certification,
-  EducationEntry,
-  ExperienceData,
-  GetExperienceResponse,
-  JobEntry,
-  ProjectEntry,
-  SaveExperienceResponse,
-  TechnicalSkills,
-} from "@/lib/types";
+import ExperienceSidebarToc, { type TocGroup } from "@/app/components/ExperienceSidebarToc";
+import type { ExperienceData, GetExperienceResponse, SaveExperienceResponse } from "@/lib/types";
 
 const EMPTY_EXPERIENCE: ExperienceData = {
   meta: { name: "", email: "", linkedin: "", github: "", website: "" },
@@ -27,33 +14,8 @@ const EMPTY_EXPERIENCE: ExperienceData = {
   technical_skills: {},
 };
 
-function makeId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function emptyJob(): JobEntry {
-  return { company: "", role: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
-}
-
-function emptyProject(): ProjectEntry {
-  return { name: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
-}
-
-function emptyEducation(): EducationEntry {
-  return { institution: "", credential: "", dates: "", date_confidence: "unknown", included: true };
-}
-
-function emptyCertification(): Certification {
-  return { id: makeId("cert"), name: "", included: true };
-}
-
-const inputClass =
-  "w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
-const labelClass = "flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400";
 const sectionClass =
   "flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950";
-const addButtonClass =
-  "self-start rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
 export default function ExperienceBuilder() {
   const [loading, setLoading] = useState(true);
@@ -97,28 +59,6 @@ export default function ExperienceBuilder() {
     setSaveResult(null);
   }
 
-  function handleAccept(fragment: AcceptedFragment) {
-    update({
-      meta: { ...experience.meta, ...fragment.meta },
-      jobs: [...experience.jobs, ...fragment.jobs],
-      projects: [...experience.projects, ...fragment.projects],
-      education: [...experience.education, ...fragment.education],
-      certifications: [...(experience.certifications ?? []), ...fragment.certifications],
-      technical_skills: mergeTechnicalSkills(experience.technical_skills, fragment.technical_skills),
-    });
-  }
-
-  function mergeTechnicalSkills(base: TechnicalSkills, incoming?: TechnicalSkills): TechnicalSkills {
-    if (!incoming) return base;
-    const merged: TechnicalSkills = { ...base };
-    for (const [category, skills] of Object.entries(incoming)) {
-      const existing = merged[category] ?? [];
-      const existingNames = new Set(existing.map((s) => s.skill.toLowerCase()));
-      merged[category] = [...existing, ...skills.filter((s) => !existingNames.has(s.skill.toLowerCase()))];
-    }
-    return merged;
-  }
-
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -151,6 +91,67 @@ export default function ExperienceBuilder() {
 
   const certifications = experience.certifications ?? [];
 
+  const tocGroups: TocGroup[] = [
+    {
+      id: "exp-section-contact",
+      label: "Contact info",
+      entries: [],
+      needsAttention: !experience.meta.name.trim() || !experience.meta.email.trim(),
+    },
+    {
+      id: "exp-section-jobs",
+      label: "Work experience",
+      entries: experience.jobs.map((job, i) => ({
+        id: `exp-job-${i}`,
+        label:
+          job.company.trim() || job.role.trim()
+            ? `${job.company.trim() || "—"} — ${job.role.trim() || "—"}`
+            : "(untitled)",
+        needsAttention: !job.company.trim() && !job.role.trim(),
+      })),
+      needsAttention: experience.jobs.some((j) => !j.company.trim() && !j.role.trim()),
+    },
+    {
+      id: "exp-section-projects",
+      label: "Projects",
+      entries: experience.projects.map((project, i) => ({
+        id: `exp-project-${i}`,
+        label: project.name.trim() || "(untitled)",
+        needsAttention: !project.name.trim(),
+      })),
+      needsAttention: experience.projects.some((p) => !p.name.trim()),
+    },
+    {
+      id: "exp-section-education",
+      label: "Education",
+      entries: experience.education.map((education, i) => ({
+        id: `exp-edu-${i}`,
+        label:
+          education.institution.trim() || education.credential.trim()
+            ? education.institution.trim() || education.credential.trim()
+            : "(untitled)",
+        needsAttention: !education.institution.trim() && !education.credential.trim(),
+      })),
+      needsAttention: experience.education.some((e) => !e.institution.trim() && !e.credential.trim()),
+    },
+    {
+      id: "exp-section-certifications",
+      label: "Certifications",
+      entries: certifications.map((cert) => ({
+        id: `exp-cert-${cert.id}`,
+        label: cert.name.trim() || "(untitled)",
+        needsAttention: !cert.name.trim(),
+      })),
+      needsAttention: certifications.some((c) => !c.name.trim()),
+    },
+    {
+      id: "exp-section-skills",
+      label: "Technical skills",
+      entries: [],
+      needsAttention: false,
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-8">
       {isNew && (
@@ -164,264 +165,60 @@ export default function ExperienceBuilder() {
 
       <section className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
         <div className="flex flex-col gap-8">
-          <ExperienceUploadPanel ollamaModel={ollamaModel} ollamaHost={ollamaHost} onAccept={handleAccept} />
-
-      <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Extraction settings</h2>
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-            Model
-            <input
-              value={ollamaModel}
-              onChange={(e) => setOllamaModel(e.target.value)}
-              className="w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-            Ollama host (optional)
-            <input
-              value={ollamaHost}
-              onChange={(e) => setOllamaHost(e.target.value)}
-              placeholder="http://localhost:11434"
-              className="w-56 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            />
-          </label>
-        </div>
-      </section>
-
-      <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Contact info</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className={labelClass}>
-            Name
-            <input
-              className={inputClass}
-              value={experience.meta.name}
-              onChange={(e) => update({ meta: { ...experience.meta, name: e.target.value } })}
-            />
-          </label>
-          <label className={labelClass}>
-            Email
-            <input
-              className={inputClass}
-              value={experience.meta.email}
-              onChange={(e) => update({ meta: { ...experience.meta, email: e.target.value } })}
-            />
-          </label>
-          <label className={labelClass}>
-            Phone
-            <input
-              className={inputClass}
-              value={experience.meta.phone ?? ""}
-              onChange={(e) => update({ meta: { ...experience.meta, phone: e.target.value || undefined } })}
-            />
-          </label>
-          <label className={labelClass}>
-            LinkedIn
-            <input
-              className={inputClass}
-              value={experience.meta.linkedin}
-              onChange={(e) => update({ meta: { ...experience.meta, linkedin: e.target.value } })}
-            />
-          </label>
-          <label className={labelClass}>
-            GitHub
-            <input
-              className={inputClass}
-              value={experience.meta.github}
-              onChange={(e) => update({ meta: { ...experience.meta, github: e.target.value } })}
-            />
-          </label>
-          <label className={labelClass}>
-            Website
-            <input
-              className={inputClass}
-              value={experience.meta.website}
-              onChange={(e) => update({ meta: { ...experience.meta, website: e.target.value } })}
-            />
-          </label>
-        </div>
-
-        <div>
-          <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-            Other social/portfolio links (stored for reference only — never fetched)
-          </p>
-          <div className="flex flex-col gap-2">
-            {(experience.meta.social_links ?? []).map((link, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2">
+          <section className={sectionClass}>
+            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Extraction settings</h2>
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                Model
                 <input
-                  className={`${inputClass} w-32`}
-                  placeholder="Instagram"
-                  value={link.platform}
-                  onChange={(e) => {
-                    const links = [...(experience.meta.social_links ?? [])];
-                    links[i] = { ...links[i], platform: e.target.value };
-                    update({ meta: { ...experience.meta, social_links: links } });
-                  }}
+                  value={ollamaModel}
+                  onChange={(e) => setOllamaModel(e.target.value)}
+                  className="w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
                 />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                Ollama host (optional)
                 <input
-                  className={`${inputClass} min-w-[12rem] flex-1`}
-                  placeholder="https://…"
-                  value={link.url}
-                  onChange={(e) => {
-                    const links = [...(experience.meta.social_links ?? [])];
-                    links[i] = { ...links[i], url: e.target.value };
-                    update({ meta: { ...experience.meta, social_links: links } });
-                  }}
+                  value={ollamaHost}
+                  onChange={(e) => setOllamaHost(e.target.value)}
+                  placeholder="http://localhost:11434"
+                  className="w-56 rounded-md border border-zinc-300 bg-white px-2 py-1 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
                 />
-                <button
-                  onClick={() => {
-                    const links = (experience.meta.social_links ?? []).filter((_, li) => li !== i);
-                    update({ meta: { ...experience.meta, social_links: links } });
-                  }}
-                  className="text-xs text-red-600 underline hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button
-              onClick={() =>
-                update({
-                  meta: {
-                    ...experience.meta,
-                    social_links: [...(experience.meta.social_links ?? []), { platform: "", url: "" }],
-                  },
-                })
-              }
-              className={addButtonClass}
-            >
-              + Add link
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Work experience</h2>
-        <div className="flex flex-col gap-4">
-          {experience.jobs.map((job, i) => (
-            <JobEntryRow
-              key={i}
-              job={job}
-              onChange={(next) =>
-                update({ jobs: experience.jobs.map((j, ji) => (ji === i ? next : j)) })
-              }
-              onRemove={() => update({ jobs: experience.jobs.filter((_, ji) => ji !== i) })}
-            />
-          ))}
-        </div>
-        <button onClick={() => update({ jobs: [...experience.jobs, emptyJob()] })} className={addButtonClass}>
-          + Add job
-        </button>
-      </section>
-
-      <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Projects</h2>
-        <div className="flex flex-col gap-4">
-          {experience.projects.map((project, i) => (
-            <ProjectEntryRow
-              key={i}
-              project={project}
-              onChange={(next) =>
-                update({ projects: experience.projects.map((p, pi) => (pi === i ? next : p)) })
-              }
-              onRemove={() => update({ projects: experience.projects.filter((_, pi) => pi !== i) })}
-            />
-          ))}
-        </div>
-        <button
-          onClick={() => update({ projects: [...experience.projects, emptyProject()] })}
-          className={addButtonClass}
-        >
-          + Add project
-        </button>
-      </section>
-
-      <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Education</h2>
-        <div className="flex flex-col gap-4">
-          {experience.education.map((education, i) => (
-            <EducationEntryRow
-              key={i}
-              education={education}
-              onChange={(next) =>
-                update({ education: experience.education.map((e, ei) => (ei === i ? next : e)) })
-              }
-              onRemove={() => update({ education: experience.education.filter((_, ei) => ei !== i) })}
-            />
-          ))}
-        </div>
-        <button
-          onClick={() => update({ education: [...experience.education, emptyEducation()] })}
-          className={addButtonClass}
-        >
-          + Add education
-        </button>
-      </section>
-
-      <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Certifications</h2>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Not yet included in generated resumes — tracked here for your records and future use.
-        </p>
-        <div className="flex flex-col gap-4">
-          {certifications.map((cert, i) => (
-            <CertificationRow
-              key={cert.id}
-              certification={cert}
-              onChange={(next) =>
-                update({ certifications: certifications.map((c, ci) => (ci === i ? next : c)) })
-              }
-              onRemove={() => update({ certifications: certifications.filter((_, ci) => ci !== i) })}
-            />
-          ))}
-        </div>
-        <button
-          onClick={() => update({ certifications: [...certifications, emptyCertification()] })}
-          className={addButtonClass}
-        >
-          + Add certification
-        </button>
-      </section>
-
-      <section className={sectionClass}>
-        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">Technical skills</h2>
-        <div className="flex flex-col gap-3">
-          {Object.entries(experience.technical_skills).map(([category, skills]) => (
-            <div key={category}>
-              <p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{category}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {skills.map((s, si) => (
-                  <span
-                    key={s.skill}
-                    className="flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-                  >
-                    {s.skill}
-                    <button
-                      onClick={() =>
-                        update({
-                          technical_skills: {
-                            ...experience.technical_skills,
-                            [category]: skills.filter((_, i2) => i2 !== si),
-                          },
-                        })
-                      }
-                      className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200"
-                      aria-label={`Remove ${s.skill}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
+              </label>
             </div>
           </section>
+
+          <ExperienceUploadPanel
+            experience={experience}
+            onChange={update}
+            ollamaModel={ollamaModel}
+            ollamaHost={ollamaHost}
+          />
         </div>
 
         <aside className="sidebar-scroll flex flex-col gap-6 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          <div className={sectionClass}>
+            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">How this page works</h2>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Upload or paste a resume above (usually a one-time step) — a local Ollama model drops the
+              entries it finds straight into the sections below, which are your actual saved data. If two
+              attachments disagree on something (e.g. two different phone numbers), you&apos;ll get a
+              small prompt right there to pick one; everything else appears immediately. Edit anything in
+              those sections directly, any time. Nothing touches{" "}
+              <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">experience.yaml</code>{" "}
+              until you click{" "}
+              <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">Save</code> below.
+            </p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Note: bullet <span className="font-medium">tags</span> (e.g. &quot;python&quot;,
+              &quot;rest-api&quot;) don&apos;t affect bolding or formatting in your generated resume —
+              they&apos;re only used on the &quot;Tailor Resume&quot; tab to score how well a bullet
+              matches a job description.
+            </p>
+          </div>
+
+          <ExperienceSidebarToc groups={tocGroups} />
+
           <div className={sectionClass}>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {dirty ? "You have unsaved changes." : "All changes saved."} Saving writes directly to{" "}
