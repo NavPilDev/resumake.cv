@@ -9,6 +9,7 @@ import { ResumeFileBrowser } from "@/app/components/ResumeFileBrowser";
 import { ResumeSaveLocationModal } from "@/app/components/ResumeSaveLocationModal";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { LatexEditor } from "@/components/ui/latex-editor";
+import { RichBulletEditor } from "@/components/ui/rich-bullet-editor";
 import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
 import { cn } from "@/lib/utils";
 import { CONTACT_FIELDS } from "@/lib/contactFields";
@@ -90,6 +91,14 @@ function SectionHeader({ label, onBack }: { label: string; onBack: () => void })
 
 type EditorView = "form" | "latex";
 
+const MAX_HISTORY = 20;
+const TYPING_COALESCE_MS = 800;
+
+interface FormSnapshot {
+  selection: ResumeSelection;
+  textOverrides: Record<string, string>;
+}
+
 function ViewToggle({ value, onChange }: { value: EditorView; onChange: (v: EditorView) => void }) {
   return (
     <div className="relative flex shrink-0 items-center rounded-full border border-zinc-300 bg-zinc-100 p-0.5 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-900">
@@ -130,21 +139,24 @@ function ViewToggle({ value, onChange }: { value: EditorView; onChange: (v: Edit
 function ToolbarIconButton({
   title,
   onActivate,
+  disabled,
   children,
 }: {
   title: string;
   onActivate: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       title={title}
+      disabled={disabled}
       onMouseDown={(e) => {
         e.preventDefault();
-        onActivate();
+        if (!disabled) onActivate();
       }}
-      className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+      className="rounded-md p-1.5 text-zinc-600 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800"
     >
       {children}
     </button>
@@ -176,6 +188,14 @@ export default function ResumesBuilder() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
+
+  // Form-mode undo/redo — a separate history from the LaTeX editor's own
+  // (CodeMirror already has its own undo/redo for raw-text edits). Capped at
+  // 20 entries each; lives only in component state, so a page refresh (or
+  // switching resumes) starts a clean history rather than persisting it.
+  const [undoStack, setUndoStack] = useState<FormSnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<FormSnapshot[]>([]);
+  const lastEditRef = useRef<{ bulletId: string; at: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,6 +258,9 @@ export default function ResumesBuilder() {
     setLastCompileAt(null);
     setSaveError(null);
     setDirty(true);
+    setUndoStack([]);
+    setRedoStack([]);
+    lastEditRef.current = null;
   }
 
   async function openResume(id: string) {
@@ -258,6 +281,9 @@ export default function ResumesBuilder() {
       setTextOverrides(manifest.textOverrides);
       setLastCompileAt(manifest.lastCompile?.compiledAt ?? manifest.updatedAt);
       setDirty(false);
+      setUndoStack([]);
+      setRedoStack([]);
+      lastEditRef.current = null;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load resume");
     }
@@ -278,7 +304,46 @@ export default function ResumesBuilder() {
     }
   }
 
+  /** Snapshots the pre-change {selection, textOverrides} onto the undo
+   * stack (capped at MAX_HISTORY) and clears any redo history, since a new
+   * edit invalidates whatever was previously undone. Called by every
+   * Form-mode mutating action below except continued typing in the same
+   * bullet (see setOverride's coalescing). */
+  function pushUndoSnapshot() {
+    const next = [...undoStack, { selection, textOverrides }];
+    setUndoStack(next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next);
+    if (redoStack.length > 0) setRedoStack([]);
+  }
+
+  function handleUndo() {
+    if (undoStack.length === 0) return;
+    const snapshot = undoStack[undoStack.length - 1];
+    const nextRedo = [...redoStack, { selection, textOverrides }];
+    setUndoStack(undoStack.slice(0, -1));
+    setRedoStack(nextRedo.length > MAX_HISTORY ? nextRedo.slice(nextRedo.length - MAX_HISTORY) : nextRedo);
+    setSelection(snapshot.selection);
+    setTextOverrides(snapshot.textOverrides);
+    lastEditRef.current = null;
+    setDirty(true);
+    setTexDirty(false);
+  }
+
+  function handleRedo() {
+    if (redoStack.length === 0) return;
+    const snapshot = redoStack[redoStack.length - 1];
+    const nextUndo = [...undoStack, { selection, textOverrides }];
+    setRedoStack(redoStack.slice(0, -1));
+    setUndoStack(nextUndo.length > MAX_HISTORY ? nextUndo.slice(nextUndo.length - MAX_HISTORY) : nextUndo);
+    setSelection(snapshot.selection);
+    setTextOverrides(snapshot.textOverrides);
+    lastEditRef.current = null;
+    setDirty(true);
+    setTexDirty(false);
+  }
+
   function toggleContact(key: string) {
+    pushUndoSnapshot();
+    lastEditRef.current = null;
     setSelection((prev) => {
       const has = prev.contact.includes(key);
       return { ...prev, contact: has ? prev.contact.filter((k) => k !== key) : [...prev.contact, key] };
@@ -288,6 +353,8 @@ export default function ResumesBuilder() {
   }
 
   function toggleJob(jobId: string, allBulletIds: string[]) {
+    pushUndoSnapshot();
+    lastEditRef.current = null;
     setSelection((prev) => {
       const current = prev.jobs[jobId];
       const nextIncluded = !(current?.included ?? false);
@@ -302,6 +369,8 @@ export default function ResumesBuilder() {
   }
 
   function toggleJobBullet(jobId: string, bulletId: string) {
+    pushUndoSnapshot();
+    lastEditRef.current = null;
     setSelection((prev) => {
       const current = prev.jobs[jobId] ?? { included: true, bulletIds: [] };
       const has = current.bulletIds.includes(bulletId);
@@ -316,6 +385,8 @@ export default function ResumesBuilder() {
   }
 
   function toggleProject(projectId: string, allBulletIds: string[]) {
+    pushUndoSnapshot();
+    lastEditRef.current = null;
     setSelection((prev) => {
       const current = prev.projects[projectId];
       const nextIncluded = !(current?.included ?? false);
@@ -330,6 +401,8 @@ export default function ResumesBuilder() {
   }
 
   function toggleProjectBullet(projectId: string, bulletId: string) {
+    pushUndoSnapshot();
+    lastEditRef.current = null;
     setSelection((prev) => {
       const current = prev.projects[projectId] ?? { included: true, bulletIds: [] };
       const has = current.bulletIds.includes(bulletId);
@@ -344,6 +417,8 @@ export default function ResumesBuilder() {
   }
 
   function toggleArrayMember(key: "education" | "certifications" | "technicalSkillCategories", id: string) {
+    pushUndoSnapshot();
+    lastEditRef.current = null;
     setSelection((prev) => {
       const arr = prev[key];
       const next = arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id];
@@ -353,7 +428,17 @@ export default function ResumesBuilder() {
     setTexDirty(false);
   }
 
+  /** Rapid consecutive edits to the same bullet (normal typing, or a Ctrl+B/
+   * Ctrl+I/Ctrl+U formatting toggle right after) coalesce into a single undo
+   * step instead of one entry per keystroke — otherwise the 20-entry cap
+   * would only cover a few characters of typing. A pause longer than
+   * TYPING_COALESCE_MS, or editing a different bullet, starts a new step. */
   function setOverride(bulletId: string, text: string) {
+    const now = Date.now();
+    const last = lastEditRef.current;
+    const isContinuation = !!last && last.bulletId === bulletId && now - last.at < TYPING_COALESCE_MS;
+    if (!isContinuation) pushUndoSnapshot();
+    lastEditRef.current = { bulletId, at: now };
     setTextOverrides((prev) => ({ ...prev, [bulletId]: text }));
     setDirty(true);
     setTexDirty(false);
@@ -420,32 +505,43 @@ export default function ResumesBuilder() {
     doSave(title);
   }
 
-  const handleSaveRef = useRef(handleSave);
-  handleSaveRef.current = handleSave;
-
-  /** Wraps the current selection in the last-focused bullet textarea (see
-   * the data-bullet-id attribute set in renderBulletRow) with a real LaTeX
-   * formatting command — mapped straight to Overleaf's documented
-   * \textbf{}/\textit{}/\underline{} commands (not an abstracted markup
-   * syntax), so escapeLatexWithFormatting can pass it through verbatim at
-   * compile time. No-ops if focus isn't in a bullet textarea or nothing is
-   * selected. */
+  /** Applies bold/italic/underline to the current selection in the
+   * last-focused bullet editor (see the data-bullet-id attribute set by
+   * RichBulletEditor) via the browser's native execCommand — the resulting
+   * DOM edit (real <b>/<i>/<u> tags) fires a native input event, which
+   * RichBulletEditor's onInput already converts back to the stored
+   * \textbf{}/\textit{}/\underline{} text via htmlToRaw, so no separate
+   * setOverride call is needed here. No-ops if focus isn't in a bullet
+   * editor or nothing is selected. Toggling an already-bold selection
+   * un-bolds it, same as any rich text editor. */
   function applyFormatting(kind: "bold" | "italic" | "underline") {
     const el = document.activeElement;
-    if (!(el instanceof HTMLTextAreaElement) || !el.dataset.bulletId) return;
-    const bulletId = el.dataset.bulletId;
-    const { selectionStart, selectionEnd, value } = el;
-    if (selectionStart === selectionEnd) return;
-    const selected = value.slice(selectionStart, selectionEnd);
-    const command = kind === "bold" ? "textbf" : kind === "italic" ? "textit" : "underline";
-    const nextValue = `${value.slice(0, selectionStart)}\\${command}{${selected}}${value.slice(selectionEnd)}`;
-    setOverride(bulletId, nextValue);
-    requestAnimationFrame(() => {
-      el.focus();
-      const openTagLength = command.length + 2; // "\command{"
-      el.setSelectionRange(selectionStart + openTagLength, selectionEnd + openTagLength);
-    });
+    if (!(el instanceof HTMLElement) || !el.isContentEditable || !el.dataset.bulletId) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    if (!el.contains(selection.anchorNode)) return;
+    document.execCommand("styleWithCSS", false, "false");
+    document.execCommand(kind === "underline" ? "underline" : kind === "italic" ? "italic" : "bold");
   }
+
+  // Ref-indirection for everything the mount-once keydown listener below
+  // calls: the listener's closure is captured once (empty deps), so without
+  // routing through a ref reassigned every render, it would keep calling the
+  // very first render's handleUndo/handleRedo/applyFormatting — which read
+  // stale undoStack/selection/textOverrides/editorView values instead of the
+  // current ones (unlike plain setState updater functions, these read state
+  // directly to build snapshots, so staleness here would silently corrupt
+  // undo history).
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+  const handleUndoRef = useRef(handleUndo);
+  handleUndoRef.current = handleUndo;
+  const handleRedoRef = useRef(handleRedo);
+  handleRedoRef.current = handleRedo;
+  const applyFormattingRef = useRef(applyFormatting);
+  applyFormattingRef.current = applyFormatting;
+  const editorViewRef = useRef(editorView);
+  editorViewRef.current = editorView;
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -454,11 +550,22 @@ export default function ResumesBuilder() {
       if (key === "s") {
         e.preventDefault();
         handleSaveRef.current();
+      } else if (key === "z") {
+        // The LaTeX editor has its own Ctrl+Z history (CodeMirror's
+        // basicSetup); Form-mode undo is a separate history and shouldn't
+        // fire underneath it.
+        if (editorViewRef.current !== "form") return;
+        e.preventDefault();
+        handleUndoRef.current();
+      } else if (key === "y") {
+        if (editorViewRef.current !== "form") return;
+        e.preventDefault();
+        handleRedoRef.current();
       } else if (key === "b" || key === "i" || key === "u") {
         const el = document.activeElement;
-        if (el instanceof HTMLTextAreaElement && el.dataset.bulletId) {
+        if (el instanceof HTMLElement && el.isContentEditable && el.dataset.bulletId) {
           e.preventDefault();
-          applyFormatting(key === "b" ? "bold" : key === "i" ? "italic" : "underline");
+          applyFormattingRef.current(key === "b" ? "bold" : key === "i" ? "italic" : "underline");
         }
       }
     }
@@ -511,11 +618,10 @@ export default function ResumesBuilder() {
     return (
       <div key={bulletId} className="flex items-start gap-2">
         <input type="checkbox" className="mt-2" checked={checked} onChange={onToggle} />
-        <textarea
+        <RichBulletEditor
           value={textOverrides[bulletId] ?? sourceText}
-          onChange={(e) => setOverride(bulletId, e.target.value)}
-          rows={2}
-          data-bullet-id={bulletId}
+          onChange={(next) => setOverride(bulletId, next)}
+          bulletId={bulletId}
           title="Select text and press Ctrl+B / Ctrl+I / Ctrl+U to format it"
           className={textareaClass}
         />
@@ -800,6 +906,21 @@ export default function ResumesBuilder() {
                     </>
                   ) : (
                     <>
+                      <ToolbarIconButton
+                        title="Undo (Ctrl+Z)"
+                        disabled={undoStack.length === 0}
+                        onActivate={handleUndo}
+                      >
+                        <Undo2 className="h-4 w-4" />
+                      </ToolbarIconButton>
+                      <ToolbarIconButton
+                        title="Redo (Ctrl+Y)"
+                        disabled={redoStack.length === 0}
+                        onActivate={handleRedo}
+                      >
+                        <Redo2 className="h-4 w-4" />
+                      </ToolbarIconButton>
+                      <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
                       <ToolbarIconButton title="Bold (Ctrl+B)" onActivate={() => applyFormatting("bold")}>
                         <Bold className="h-4 w-4" />
                       </ToolbarIconButton>
