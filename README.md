@@ -31,7 +31,6 @@ This started as one person's personal job-application toolkit — LaTeX resume/c
 - `/saved` — git-ignored local storage for your generated resumes, cover letters, and reference sheets (see [Privacy](#privacy--your-data)).
 
 <img width="1010" height="195" alt="required" src="https://github.com/user-attachments/assets/98d2db70-ff26-4c82-af18-9c06f62d7f22" />
-<img width="1010" height="195" alt="install" src="https://github.com/user-attachments/assets/17a17ac3-e41c-43e3-a3fe-0e07a5aae9d2" />
 
 - **[Node.js](https://nodejs.org)** 20+ and npm, to run `resume-revisioner` (and `application-tracker`).
 - **[Ollama](https://ollama.com)** running locally with a model pulled (e.g. `ollama pull llama3.2:3b`) — needed for Ollama-mode analysis, bullet improvement, and experience extraction. Keyword-overlap mode works without it.
