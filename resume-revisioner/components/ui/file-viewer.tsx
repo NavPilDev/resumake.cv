@@ -243,6 +243,16 @@ export interface FolderProps {
   isSelect?: boolean;
   children: React.ReactNode;
   className?: string;
+  /** Extra controls (e.g. a "show in folder" button) rendered alongside the
+   * expand/collapse trigger. Kept as a sibling rather than nested inside the
+   * Trigger, since Radix's AccordionPrimitive.Trigger renders a <button> and
+   * HTML doesn't allow nesting interactive buttons inside one. */
+  actions?: React.ReactNode;
+  /** Highlights this folder's header row as the active drag-and-drop target. */
+  isDropTarget?: boolean;
+  onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (e: React.DragEvent<HTMLDivElement>) => void;
 }
 export function Folder({
   element,
@@ -251,6 +261,11 @@ export function Folder({
   isSelect,
   children,
   className,
+  actions,
+  isDropTarget,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: FolderProps) {
   const {
     direction,
@@ -265,21 +280,32 @@ export function Folder({
       value={value}
       className="relative h-full overflow-hidden"
     >
-      <AccordionPrimitive.Trigger
+      <div
         className={cn(
-          "flex items-center gap-1 rounded-md text-sm px-2 py-1 hover:bg-accent hover:text-accent-foreground cursor-pointer",
-          isSelect && isSelectable && "bg-muted",
-          !isSelectable && "opacity-50 cursor-not-allowed",
-          className
+          "group flex items-center gap-1 rounded-md",
+          isDropTarget && "bg-accent ring-1 ring-inset ring-accent-foreground/40"
         )}
-        disabled={!isSelectable}
-        onClick={() => handleExpand(value)}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
       >
-        {expandedItems?.includes(value)
-          ? openIcon ?? <FolderOpenIcon className="h-4 w-4" />
-          : closeIcon ?? <FolderIcon className="h-4 w-4" />}
-        <span className="truncate">{element}</span>
-      </AccordionPrimitive.Trigger>
+        <AccordionPrimitive.Trigger
+          className={cn(
+            "flex flex-1 items-center gap-1 rounded-md text-sm px-2 py-1 hover:bg-accent hover:text-accent-foreground cursor-pointer",
+            isSelect && isSelectable && "bg-muted",
+            !isSelectable && "opacity-50 cursor-not-allowed",
+            className
+          )}
+          disabled={!isSelectable}
+          onClick={() => handleExpand(value)}
+        >
+          {expandedItems?.includes(value)
+            ? openIcon ?? <FolderOpenIcon className="h-4 w-4" />
+            : closeIcon ?? <FolderIcon className="h-4 w-4" />}
+          <span className="truncate">{element}</span>
+        </AccordionPrimitive.Trigger>
+        {actions}
+      </div>
       <AccordionPrimitive.Content className="relative h-full overflow-hidden text-sm">
         {indicator && <TreeIndicator />}
         <AccordionPrimitive.Root

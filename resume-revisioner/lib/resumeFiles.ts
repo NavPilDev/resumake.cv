@@ -204,3 +204,18 @@ export function writeManifest(folderPath: string, manifest: ResumeManifest): voi
 export function overwriteManifestAtPath(manifestPath: string, manifest: ResumeManifest): void {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
 }
+
+/** Moves a saved resume's manifest json to a different folder under /saved
+ * (drag-and-drop in the file browser). Only the manifest moves — compiled
+ * PDF/tex artifacts live in the shared id-keyed .build scratch dir (see
+ * resolveSavedBuildDir) and aren't tied to the manifest's folder location. */
+export function moveManifest(id: string, targetFolderPath: string): string {
+  const sourcePath = findManifestPath(id);
+  if (!sourcePath) throw new Error("Resume not found.");
+  const targetDir = resolveSavedPath(targetFolderPath);
+  fs.mkdirSync(targetDir, { recursive: true });
+  const targetPath = path.join(targetDir, `${id}.json`);
+  if (path.resolve(targetPath) === path.resolve(sourcePath)) return targetPath;
+  fs.renameSync(sourcePath, targetPath);
+  return targetPath;
+}
