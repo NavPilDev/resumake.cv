@@ -3,7 +3,11 @@
 import { useState } from "react";
 import BulletCard from "@/app/components/BulletCard";
 import ExperienceBuilder from "@/app/components/ExperienceBuilder";
+<<<<<<< HEAD
 import ResumesBuilder from "@/app/components/ResumesBuilder";
+=======
+import SidebarNav from "@/app/components/SidebarNav";
+>>>>>>> origin/main
 import type {
   AnalyzeMode,
   AnalyzeProgressEvent,
@@ -231,6 +235,7 @@ export default function Home() {
   }
 
   return (
+<<<<<<< HEAD
     <div className="min-h-full bg-zinc-50 dark:bg-black">
       <main
         className={
@@ -239,9 +244,15 @@ export default function Home() {
             : "mx-auto flex max-w-5xl flex-col gap-8 px-6 py-12"
         }
       >
+=======
+    <div className="flex min-h-full bg-zinc-50 dark:bg-black">
+      <SidebarNav activeTab={activeTab} onTabChange={setActiveTab} />
+
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
+>>>>>>> origin/main
         <header>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Resume Revisioner
+            {activeTab === "tailor" ? "Tailor Resume" : "My Experience"}
           </h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
             {activeTab === "tailor" ? (
@@ -268,6 +279,7 @@ export default function Home() {
               </>
             )}
           </p>
+<<<<<<< HEAD
 
           <div className="mt-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
             <button
@@ -301,6 +313,8 @@ export default function Home() {
               My Resumes
             </button>
           </div>
+=======
+>>>>>>> origin/main
         </header>
 
         {activeTab === "experience" && <ExperienceBuilder />}
