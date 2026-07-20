@@ -3,7 +3,11 @@
 import { useState } from "react";
 import BulletCard from "@/app/components/BulletCard";
 import ExperienceBuilder from "@/app/components/ExperienceBuilder";
+<<<<<<< HEAD
+import ResumesBuilder from "@/app/components/ResumesBuilder";
+=======
 import SidebarNav from "@/app/components/SidebarNav";
+>>>>>>> origin/main
 import type {
   AnalyzeMode,
   AnalyzeProgressEvent,
@@ -40,7 +44,7 @@ function genStageLabel(stage: "compiling" | "trimming" | "finalizing" | undefine
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"tailor" | "experience">("tailor");
+  const [activeTab, setActiveTab] = useState<"tailor" | "experience" | "resumes">("tailor");
   const [jdText, setJdText] = useState("");
   const [maxBullets, setMaxBullets] = useState(4);
   const [mode, setMode] = useState<AnalyzeMode>("keyword");
@@ -231,10 +235,21 @@ export default function Home() {
   }
 
   return (
+<<<<<<< HEAD
+    <div className="min-h-full bg-zinc-50 dark:bg-black">
+      <main
+        className={
+          activeTab === "resumes"
+            ? "flex w-full flex-col gap-6 px-6 py-8"
+            : "mx-auto flex max-w-5xl flex-col gap-8 px-6 py-12"
+        }
+      >
+=======
     <div className="flex min-h-full bg-zinc-50 dark:bg-black">
       <SidebarNav activeTab={activeTab} onTabChange={setActiveTab} />
 
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
+>>>>>>> origin/main
         <header>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             {activeTab === "tailor" ? "Tailor Resume" : "My Experience"}
@@ -249,7 +264,7 @@ export default function Home() {
                 ) by keyword overlap and surface skill gaps. Nothing is written back to your resume —
                 review and copy in the bullets you want.
               </>
-            ) : (
+            ) : activeTab === "experience" ? (
               <>
                 Build or edit your{" "}
                 <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
@@ -257,11 +272,54 @@ export default function Home() {
                 </code>{" "}
                 bullet bank from uploads, pasted text, or the form below.
               </>
+            ) : (
+              <>
+                Create and edit individual tailored resumes, organized into folders under{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">saved/</code>.
+              </>
             )}
           </p>
+<<<<<<< HEAD
+
+          <div className="mt-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+            <button
+              onClick={() => setActiveTab("tailor")}
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === "tailor"
+                  ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              Tailor Resume
+            </button>
+            <button
+              onClick={() => setActiveTab("experience")}
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === "experience"
+                  ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              My Experience
+            </button>
+            <button
+              onClick={() => setActiveTab("resumes")}
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === "resumes"
+                  ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              My Resumes
+            </button>
+          </div>
+=======
+>>>>>>> origin/main
         </header>
 
         {activeTab === "experience" && <ExperienceBuilder />}
+
+        {activeTab === "resumes" && <ResumesBuilder />}
 
         {activeTab === "tailor" && (
           <>

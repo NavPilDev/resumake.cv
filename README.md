@@ -2,16 +2,16 @@
 
 Abhinav Pillai's personal job-application toolkit: LaTeX sources for resumes/cover letters/reference sheets, a single YAML bullet bank that feeds all of them, a Next.js app that tailors a resume to a job description, an application tracker, and per-company notes.
 
-## Resumeak
+## Resumake.cv
 
-Everything in this repo is converging into **Resumeak** — a single local program, powered by [Ollama](https://ollama.com) so no data leaves your machine, that anyone can run to manage their own job search the same way this repo does: one experience bank, tailored resumes generated on demand, application tracking, and company notes, all in one tool instead of a pile of scripts and folders.
+Everything in this repo is converging into **Resumake.cv** — a single local program, powered by [Ollama](https://ollama.com) so no data leaves your machine, that anyone can run to manage their own job search the same way this repo does: one experience bank, tailored resumes generated on demand, application tracking, and company notes, all in one tool instead of a pile of scripts and folders.
 
-Resumeak's code currently lives in [`resume-revisioner/`](resume-revisioner) (it hasn't been renamed yet). That app already does JD analysis + tailored `.tex` resume generation against [`experience.yaml`](experience.yaml); an **"input your experience"** UI (letting you build/edit your bullet bank from the app instead of hand-editing the YAML) is in progress. [`application-tracker/`](application-tracker) and the LaTeX/notes tooling below are expected to fold in as Resumeak grows.
+Resumake.cv's code currently lives in [`resume-revisioner/`](resume-revisioner) (it hasn't been renamed yet). That app already does JD analysis + tailored `.tex` resume generation against [`experience.yaml`](experience.yaml), plus an **"input your experience"** UI (a "My Experience" tab for building/editing your bullet bank from the app instead of hand-editing the YAML, including resume upload/import). [`application-tracker/`](application-tracker) and the LaTeX/notes tooling below are expected to fold in as Resumake.cv grows.
 
 ## Project Structure
 
 - [`experience.yaml`](experience.yaml) — master source of truth for resume bullets (jobs, projects, education, skills), tagged and scored against job descriptions by resume-revisioner
-- [`resume-revisioner/`](resume-revisioner) — Next.js + Ollama app that scores `experience.yaml` bullets against a pasted JD, surfaces skill gaps, and generates a tailored, page-fit LaTeX resume. Home of the in-progress Resumeak build — see its [README](resume-revisioner/README.md)
+- [`resume-revisioner/`](resume-revisioner) — Next.js + Ollama app that scores `experience.yaml` bullets against a pasted JD, surfaces skill gaps, and generates a tailored, page-fit LaTeX resume. Home of the in-progress Resumake.cv build — see its [README](resume-revisioner/README.md)
 - [`application-tracker/`](application-tracker) — Next.js app for tracking job applications (early scaffold)
 - [`company-notes/`](company-notes) — per-company research notes, from [`company-notes-template.md`](company-notes/company-notes-template.md)
 - [`latex-resumes/`](latex-resumes) — `master-resume.tex`, hand-maintained `resume.tex`, and generated `tailored-resume.tex` outputs

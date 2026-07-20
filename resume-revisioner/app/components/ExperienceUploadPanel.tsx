@@ -36,15 +36,15 @@ function makeId(prefix: string): string {
 }
 
 function emptyJob(): JobEntry {
-  return { company: "", role: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
+  return { id: makeId("job"), company: "", role: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
 }
 
 function emptyProject(): ProjectEntry {
-  return { name: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
+  return { id: makeId("project"), name: "", dates: "", date_confidence: "unknown", included: true, bullets: [] };
 }
 
 function emptyEducation(): EducationEntry {
-  return { institution: "", credential: "", dates: "", date_confidence: "unknown", included: true };
+  return { id: makeId("edu"), institution: "", credential: "", dates: "", date_confidence: "unknown", included: true };
 }
 
 function emptyCertification(): Certification {
@@ -220,6 +220,7 @@ function buildJobEntry(j: NonNullable<ExtractedExperienceFragment["jobs"]>[numbe
   const fallback = !normalizedStart || !normalizedEnd ? parseDatesFromDisplayString(dates) : {};
 
   return {
+    id: makeId("job"),
     company: j.company ?? "",
     role: j.role ?? "",
     dates,
@@ -239,6 +240,7 @@ function buildJobEntry(j: NonNullable<ExtractedExperienceFragment["jobs"]>[numbe
 
 function buildProjectEntry(p: NonNullable<ExtractedExperienceFragment["projects"]>[number]): ProjectEntry {
   return {
+    id: makeId("project"),
     name: p.name ?? "",
     dates: p.dates ?? "",
     date_confidence: p.date_confidence ?? "unknown",
@@ -250,6 +252,7 @@ function buildProjectEntry(p: NonNullable<ExtractedExperienceFragment["projects"
 
 function buildEducationEntry(e: NonNullable<ExtractedExperienceFragment["education"]>[number]): EducationEntry {
   return {
+    id: makeId("edu"),
     institution: e.institution ?? "",
     credential: e.credential ?? "",
     degree_level: e.degree_level,
