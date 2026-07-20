@@ -301,3 +301,15 @@ export interface GetExperienceResponse {
    * immediately re-save once to persist the backfilled ids to disk. */
   idsBackfilled: boolean;
 }
+
+/** Identifies which piece of form/experience data a `%RESUME_ANCHOR:` LaTeX
+ * comment (see lib/latexTemplate.ts) — and therefore a SyncTeX-resolved PDF
+ * click — corresponds to. Kept here (not in lib/synctex.ts, which imports
+ * node:child_process) so client components can import the type without
+ * pulling server-only code into the browser bundle — same reasoning as
+ * lib/contactFields.ts. */
+export interface ResumeAnchor {
+  section: string;
+  entryId?: string;
+  bulletId?: string;
+}

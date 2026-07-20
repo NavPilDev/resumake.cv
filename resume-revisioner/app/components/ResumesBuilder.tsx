@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Bold, Italic, Underline, Undo2, Redo2, Download } from "lucide-react";
 import { undo, redo } from "@codemirror/commands";
+import { EditorSelection } from "@codemirror/state";
+import { EditorView as CmEditorView } from "@codemirror/view";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { toast } from "sonner";
 import { ResumeFileBrowser } from "@/app/components/ResumeFileBrowser";
@@ -10,6 +12,7 @@ import { ResumeSaveLocationModal } from "@/app/components/ResumeSaveLocationModa
 import { getPanelGroupElement, type ImperativePanelHandle } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { LatexEditor } from "@/components/ui/latex-editor";
+import { PdfViewer, type PdfNavigateResult } from "@/components/ui/pdf-viewer";
 import { RichBulletEditor } from "@/components/ui/rich-bullet-editor";
 import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
 import { cn } from "@/lib/utils";
@@ -20,7 +23,7 @@ import type {
   ResumeTreeNode,
   SectionSelection,
 } from "@/lib/resumeFiles";
-import type { ExperienceData, GetExperienceResponse } from "@/lib/types";
+import type { ExperienceData, GetExperienceResponse, ResumeAnchor } from "@/lib/types";
 
 const EMPTY_EXPERIENCE: ExperienceData = {
   meta: { name: "", email: "", linkedin: "", github: "", website: "" },
@@ -60,6 +63,8 @@ const simpleRowClass =
   "flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-3 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200";
 const textareaClass =
   "flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+const highlightClass =
+  "bg-amber-50 ring-2 ring-amber-400 dark:bg-amber-950/30 dark:ring-amber-500";
 
 function TocRow({ label, summary, onClick }: { label: string; summary: string; onClick: () => void }) {
   return (
@@ -365,6 +370,49 @@ export default function ResumesBuilder() {
       await refreshTree();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create folder");
+    }
+  }
+
+  async function handleMoveResume(id: string, folderPath: string) {
+    try {
+      const res = await fetch(`/api/resumes/${id}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderPath }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
+      await refreshTree();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to move resume");
+    }
+  }
+
+  async function handleRevealResume(id: string) {
+    try {
+      const res = await fetch(`/api/resumes/${id}/reveal`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data?.error ?? `Request failed (${res.status})`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to open folder");
+    }
+  }
+
+  async function handleRevealFolder(folderPath: string) {
+    try {
+      const res = await fetch("/api/resumes/folders/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderPath }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data?.error ?? `Request failed (${res.status})`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to open folder");
     }
   }
 
@@ -709,6 +757,79 @@ export default function ResumesBuilder() {
     };
   }, [mode]);
 
+  // Double-click-to-source: double-clicking the pdf.js preview resolves (via
+  // SyncTeX, see /api/resumes/[id]/synctex) to a section/entry/bullet. In
+  // Form view that switches to the matching section and briefly highlights
+  // the row; in LaTeX view it scrolls/selects the corresponding source line.
+  // rowRefs lets the highlight-scroll effect below find the target row once
+  // its section becomes active — it isn't in the DOM until then.
+  const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [highlightTarget, setHighlightTarget] = useState<ResumeAnchor | null>(null);
+
+  function rowKey(section: string, entryId?: string, bulletId?: string): string {
+    return `${section}:${entryId ?? ""}:${bulletId ?? ""}`;
+  }
+
+  function registerRow(section: string, entryId?: string, bulletId?: string) {
+    const key = rowKey(section, entryId, bulletId);
+    return (el: HTMLElement | null) => {
+      if (el) rowRefs.current.set(key, el);
+      else rowRefs.current.delete(key);
+    };
+  }
+
+  function isRowHighlighted(section: string, entryId?: string, bulletId?: string): boolean {
+    return (
+      !!highlightTarget &&
+      highlightTarget.section === section &&
+      (highlightTarget.entryId ?? "") === (entryId ?? "") &&
+      (highlightTarget.bulletId ?? "") === (bulletId ?? "")
+    );
+  }
+
+  function handleNavigate({ anchor, line }: PdfNavigateResult) {
+    if (line === null) {
+      toast.error("Couldn't find that spot in the compiled source.");
+      return;
+    }
+    if (editorViewRef.current === "latex") {
+      const view = latexEditorRef.current?.view;
+      if (view) {
+        const clampedLine = Math.min(Math.max(line, 1), view.state.doc.lines);
+        const lineInfo = view.state.doc.line(clampedLine);
+        view.dispatch({
+          selection: EditorSelection.range(lineInfo.from, lineInfo.to),
+          effects: CmEditorView.scrollIntoView(lineInfo.from, { y: "center" }),
+        });
+        view.focus();
+      }
+      return;
+    }
+    if (!anchor) {
+      toast("That spot doesn't map to an editable field.");
+      return;
+    }
+    setActiveSection(anchor.section as SectionKey);
+    setHighlightTarget(anchor);
+  }
+
+  const handleNavigateRef = useRef(handleNavigate);
+  handleNavigateRef.current = handleNavigate;
+  const stableOnNavigateRef = useRef((result: PdfNavigateResult) => handleNavigateRef.current(result));
+
+  useEffect(() => {
+    if (!highlightTarget) return;
+    const t = setTimeout(() => setHighlightTarget(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightTarget]);
+
+  useEffect(() => {
+    if (!highlightTarget || highlightTarget.section !== activeSection) return;
+    const key = rowKey(highlightTarget.section, highlightTarget.entryId, highlightTarget.bulletId);
+    const el = rowRefs.current.get(key);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeSection, highlightTarget]);
+
   if (experienceLoading || treeLoading) {
     return <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>;
   }
@@ -722,9 +843,23 @@ export default function ResumesBuilder() {
   const jobsIncludedCount = experience.jobs.filter((j) => j.id && selection.jobs[j.id]?.included).length;
   const projectsIncludedCount = experience.projects.filter((p) => p.id && selection.projects[p.id]?.included).length;
 
-  function renderBulletRow(bulletId: string, sourceText: string, checked: boolean, onToggle: () => void) {
+  function renderBulletRow(
+    section: "jobs" | "projects",
+    entryId: string,
+    bulletId: string,
+    sourceText: string,
+    checked: boolean,
+    onToggle: () => void
+  ) {
     return (
-      <div key={bulletId} className="flex items-start gap-2">
+      <div
+        key={bulletId}
+        ref={registerRow(section, entryId, bulletId)}
+        className={cn(
+          "flex items-start gap-2 rounded-md p-1 transition-colors",
+          isRowHighlighted(section, entryId, bulletId) && highlightClass
+        )}
+      >
         <input type="checkbox" className="mt-2" checked={checked} onChange={onToggle} />
         <RichBulletEditor
           value={textOverrides[bulletId] ?? sourceText}
@@ -786,12 +921,19 @@ export default function ResumesBuilder() {
     return (
       <div className="flex flex-col gap-4">
         <SectionHeader label="Contact Info" onBack={() => setActiveSection("toc")} />
-        <p className={simpleRowClass}>
+        <p
+          ref={registerRow("contact", "name")}
+          className={cn(simpleRowClass, isRowHighlighted("contact", "name") && highlightClass)}
+        >
           <span className="font-medium">Name:</span> {experience.meta.name || "(not set)"}{" "}
           <span className="text-xs text-zinc-500 dark:text-zinc-400">— always included</span>
         </p>
         {CONTACT_FIELDS.map((key) => (
-          <label key={key} className={simpleRowClass}>
+          <label
+            key={key}
+            ref={registerRow("contact", key)}
+            className={cn(simpleRowClass, isRowHighlighted("contact", key) && highlightClass)}
+          >
             <input
               type="checkbox"
               checked={selection.contact.includes(key)}
@@ -813,7 +955,11 @@ export default function ResumesBuilder() {
           {experience.education.map(
             (edu) =>
               edu.id && (
-                <label key={edu.id} className={simpleRowClass}>
+                <label
+                  key={edu.id}
+                  ref={registerRow("education", edu.id)}
+                  className={cn(simpleRowClass, isRowHighlighted("education", edu.id) && highlightClass)}
+                >
                   <input
                     type="checkbox"
                     checked={selection.education.includes(edu.id)}
@@ -836,7 +982,11 @@ export default function ResumesBuilder() {
           {experience.jobs.map(
             (job) =>
               job.id && (
-                <div key={job.id} className={sectionCardClass}>
+                <div
+                  key={job.id}
+                  ref={registerRow("jobs", job.id)}
+                  className={cn(sectionCardClass, isRowHighlighted("jobs", job.id) && highlightClass)}
+                >
                   <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
                     <input
                       type="checkbox"
@@ -849,6 +999,8 @@ export default function ResumesBuilder() {
                     <div className="flex flex-col gap-2 pl-6">
                       {job.bullets.map((b) =>
                         renderBulletRow(
+                          "jobs",
+                          job.id!,
                           b.id,
                           b.text,
                           selection.jobs[job.id!]?.bulletIds.includes(b.id) ?? false,
@@ -873,7 +1025,11 @@ export default function ResumesBuilder() {
           {experience.projects.map(
             (project) =>
               project.id && (
-                <div key={project.id} className={sectionCardClass}>
+                <div
+                  key={project.id}
+                  ref={registerRow("projects", project.id)}
+                  className={cn(sectionCardClass, isRowHighlighted("projects", project.id) && highlightClass)}
+                >
                   <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
                     <input
                       type="checkbox"
@@ -886,6 +1042,8 @@ export default function ResumesBuilder() {
                     <div className="flex flex-col gap-2 pl-6">
                       {project.bullets.map((b) =>
                         renderBulletRow(
+                          "projects",
+                          project.id!,
                           b.id,
                           b.text,
                           selection.projects[project.id!]?.bulletIds.includes(b.id) ?? false,
@@ -908,7 +1066,11 @@ export default function ResumesBuilder() {
         <SectionHeader label="Certifications" onBack={() => setActiveSection("toc")} />
         <div className="flex flex-col gap-2">
           {certifications.map((cert) => (
-            <label key={cert.id} className={simpleRowClass}>
+            <label
+              key={cert.id}
+              ref={registerRow("certifications", cert.id)}
+              className={cn(simpleRowClass, isRowHighlighted("certifications", cert.id) && highlightClass)}
+            >
               <input
                 type="checkbox"
                 checked={selection.certifications.includes(cert.id)}
@@ -930,7 +1092,15 @@ export default function ResumesBuilder() {
           {skillCategories.map((category) => {
             const entries = experience.technical_skills[category] ?? [];
             return (
-              <label key={category} className={cn(simpleRowClass, "items-start")}>
+              <label
+                key={category}
+                ref={registerRow("skills", category)}
+                className={cn(
+                  simpleRowClass,
+                  "items-start",
+                  isRowHighlighted("skills", category) && highlightClass
+                )}
+              >
                 <input
                   type="checkbox"
                   className="mt-0.5"
@@ -961,6 +1131,9 @@ export default function ResumesBuilder() {
             onOpenResume={openResume}
             onCreateFolder={handleCreateFolder}
             onCreateResume={startCreate}
+            onMoveResume={handleMoveResume}
+            onRevealResume={handleRevealResume}
+            onRevealFolder={handleRevealFolder}
           />
         </ResizablePanel>
 
@@ -1130,10 +1303,12 @@ export default function ResumesBuilder() {
                 >
                   <div className="aspect-[8.5/11] h-full max-w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
                     {resumeId && lastCompileAt ? (
-                      <iframe
-                        src={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}#toolbar=0&navpanes=0`}
-                        className="h-full w-full"
-                        title="Resume preview"
+                      <PdfViewer
+                        key={resumeId}
+                        resumeId={resumeId}
+                        pdfUrl={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}`}
+                        onNavigate={stableOnNavigateRef.current}
+                        className="h-full w-full overflow-y-auto"
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">

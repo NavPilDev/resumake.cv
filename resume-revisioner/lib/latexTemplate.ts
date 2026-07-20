@@ -112,6 +112,19 @@ function linkDisplayText(url: string): string {
   return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
+/** Emits a LaTeX comment line (invisible in the compiled PDF, inert to
+ * SyncTeX's line mapping) identifying which piece of form/experience data
+ * produced the following source line(s). The "My Resumes" double-click-to-
+ * edit feature resolves a PDF click to a .tex line via SyncTeX, then scans
+ * upward for the nearest one of these to know which section/field/bullet to
+ * jump to — see app/api/resumes/[id]/synctex/route.ts. */
+function anchorComment(section: string, entryId?: string, bulletId?: string): string {
+  const payload: Record<string, string> = { section };
+  if (entryId !== undefined) payload.entryId = entryId;
+  if (bulletId !== undefined) payload.bulletId = bulletId;
+  return `%RESUME_ANCHOR:${JSON.stringify(payload)}`;
+}
+
 interface Meta {
   name: string;
   email: string;
@@ -126,31 +139,46 @@ interface Meta {
  * or an empty \href. Name (and the hardcoded "US Citizen" line) always show. */
 function buildHeader(meta: Meta): string {
   const segments = [
-    String.raw`$\bullet$\ \underline{\textbf{US Citizen}}`,
-    meta.email && String.raw`{\faEnvelope\  \underline{${escapeLatex(meta.email)}}}`,
-    meta.linkedin &&
-      String.raw`{\faLinkedin\ \underline{\href{${meta.linkedin}}{${escapeLatex(linkDisplayText(meta.linkedin))}}}}`,
-    meta.github &&
-      String.raw`{\faGithub\ \underline{\href{${meta.github}}{${escapeLatex(linkDisplayText(meta.github))}}}}`,
-    meta.website &&
-      String.raw`{\faBriefcase\ \underline{\href{${meta.website}}{${escapeLatex(linkDisplayText(meta.website))}}}}`,
-  ].filter((s): s is string => Boolean(s));
+    { key: undefined, tex: String.raw`$\bullet$\ \underline{\textbf{US Citizen}}` },
+    meta.email && {
+      key: "email",
+      tex: String.raw`{\faEnvelope\  \underline{${escapeLatex(meta.email)}}}`,
+    },
+    meta.linkedin && {
+      key: "linkedin",
+      tex: String.raw`{\faLinkedin\ \underline{\href{${meta.linkedin}}{${escapeLatex(linkDisplayText(meta.linkedin))}}}}`,
+    },
+    meta.github && {
+      key: "github",
+      tex: String.raw`{\faGithub\ \underline{\href{${meta.github}}{${escapeLatex(linkDisplayText(meta.github))}}}}`,
+    },
+    meta.website && {
+      key: "website",
+      tex: String.raw`{\faBriefcase\ \underline{\href{${meta.website}}{${escapeLatex(linkDisplayText(meta.website))}}}}`,
+    },
+  ].filter((s): s is { key?: string; tex: string } => Boolean(s));
+
+  const segmentTex = segments
+    .map((s) => (s.key ? `${anchorComment("contact", s.key)}\n    ${s.tex}` : s.tex))
+    .join(" ~\n    ");
 
   return String.raw`\begin{center}
+    ${anchorComment("contact", "name")}
     {\Large \scshape ${escapeLatex(meta.name)}} \\[2mm]
     \footnotesize
-    ${segments.join(" ~\n    ")}
+    ${segmentTex}
 \end{center}`;
 }
 
 function buildEducation(education: EducationEntry[]): string {
   if (education.length === 0) return "";
   const entries = education
-    .map(
-      (e) => String.raw`    \resumeSubheading
+    .map((e) => {
+      const anchorLine = e.id ? `    ${anchorComment("education", e.id)}\n` : "";
+      return String.raw`${anchorLine}    \resumeSubheading
       {${escapeLatex(e.institution)}}{${escapeLatex(e.location ?? "")}}
-      {${escapeLatex(e.credential)}}{${escapeLatex(e.dates)}}`
-    )
+      {${escapeLatex(e.credential)}}{${escapeLatex(e.dates)}}`;
+    })
     .join("\n");
 
   return String.raw`%-----------EDUCATION-----------
@@ -165,9 +193,14 @@ function buildExperience(jobs: GenerateResumeSectionInput[]): string {
   const entries = jobs
     .map((job) => {
       const bullets = job.bullets
-        .map((b) => `                    \\resumeItem{${escapeLatexWithFormatting(b.text)}}`)
+        .map(
+          (b) =>
+            `                    ${anchorComment("jobs", job.id, b.id)}\n` +
+            `                    \\resumeItem{${escapeLatexWithFormatting(b.text)}}`
+        )
         .join("\n");
-      return String.raw`                \resumeSubheading{${escapeLatex(job.company ?? "")}}{${escapeLatex(job.dates)}}{${escapeLatex(job.role ?? "")}}{${escapeLatex(job.location ?? "")}}
+      return String.raw`                ${anchorComment("jobs", job.id)}
+                \resumeSubheading{${escapeLatex(job.company ?? "")}}{${escapeLatex(job.dates)}}{${escapeLatex(job.role ?? "")}}{${escapeLatex(job.location ?? "")}}
                 \resumeItemListStart
 ${bullets}
                     \resumeItemListEnd`;
@@ -191,9 +224,14 @@ function buildProjects(projects: GenerateResumeSectionInput[]): string {
         .join(" $|$ ");
       const titleLine = `\\textbf{{${escapeLatex(project.label)}}}` + (linkStr ? ` $|$ \\emph{${linkStr}}` : "");
       const bullets = project.bullets
-        .map((b) => `                \\resumeItem{${escapeLatexWithFormatting(b.text)}}`)
+        .map(
+          (b) =>
+            `                ${anchorComment("projects", project.id, b.id)}\n` +
+            `                \\resumeItem{${escapeLatexWithFormatting(b.text)}}`
+        )
         .join("\n");
-      return String.raw`        \resumeProjectHeading
+      return String.raw`        ${anchorComment("projects", project.id)}
+        \resumeProjectHeading
             {${titleLine}}{${escapeLatex(project.dates)}}
             \resumeItemListStart
 ${bullets}
@@ -220,7 +258,8 @@ function buildCertifications(certifications: Certification[]): string {
         .filter((x): x is string => Boolean(x))
         .map(escapeLatex)
         .join(" -- ");
-      return String.raw`    \resumeSubItem{\textbf{${escapeLatex(c.name)}}${meta ? ` (${meta})` : ""}}`;
+      return String.raw`    ${anchorComment("certifications", c.id)}
+    \resumeSubItem{\textbf{${escapeLatex(c.name)}}${meta ? ` (${meta})` : ""}}`;
     })
     .join("\n");
 
@@ -239,7 +278,10 @@ function buildSkills(technicalSkills: TechnicalSkills): string {
   const lines = entries
     .map(([category, entries]) => {
       const skillList = entries.map((e) => escapeLatex(e.skill)).join(", ");
-      return `     \\textbf{${humanizeCategory(category)}}{: ${skillList}} \\\\[1mm]`;
+      return (
+        `     ${anchorComment("skills", category)}\n` +
+        `     \\textbf{${humanizeCategory(category)}}{: ${skillList}} \\\\[1mm]`
+      );
     })
     .join("\n");
 
