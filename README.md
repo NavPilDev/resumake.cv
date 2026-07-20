@@ -1,7 +1,6 @@
 
 
 <img width="1010" height="195" alt="logo" src="https://github.com/user-attachments/assets/576399cf-85b7-477e-8c29-a4c4d91a8a8e" />
-# Resumake.cv
 
 A local, [Ollama](https://ollama.com)-powered toolkit for tailoring resumes to job descriptions — no data leaves your machine. One experience bank feeds tailored LaTeX resumes, keyword-gap analysis, application tracking, and company research notes, instead of a pile of scripts and folders.
 
