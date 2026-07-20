@@ -7,7 +7,7 @@ import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { toast } from "sonner";
 import { ResumeFileBrowser } from "@/app/components/ResumeFileBrowser";
 import { ResumeSaveLocationModal } from "@/app/components/ResumeSaveLocationModal";
-import type { ImperativePanelHandle } from "react-resizable-panels";
+import { getPanelGroupElement, type ImperativePanelHandle } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { LatexEditor } from "@/components/ui/latex-editor";
 import { RichBulletEditor } from "@/components/ui/rich-bullet-editor";
@@ -103,6 +103,8 @@ const PAGE_ASPECT_RATIO = 8.5 / 11;
 const PREVIEW_ASIDE_HORIZONTAL_PADDING_PX = 48;
 const PREVIEW_MIN_SIZE_PCT_FLOOR = 20;
 const PREVIEW_MIN_SIZE_PCT_CEILING = 60;
+
+const PANEL_GROUP_ID = "resume-builder-panels";
 
 interface FormSnapshot {
   selection: ResumeSelection;
@@ -667,13 +669,12 @@ export default function ResumesBuilder() {
   // show a full resume page at whatever height it currently has (Overleaf-style):
   // derive the required page width from the page wrapper's live height via the
   // page's own aspect ratio, then floor the panel's width at that + its padding.
-  const previewGroupRef = useRef<HTMLDivElement>(null);
   const previewPageWrapperRef = useRef<HTMLDivElement>(null);
   const previewPanelRef = useRef<ImperativePanelHandle>(null);
   const [previewMinSizePct, setPreviewMinSizePct] = useState(PREVIEW_MIN_SIZE_PCT_FLOOR);
 
   useEffect(() => {
-    const groupEl = previewGroupRef.current;
+    const groupEl = getPanelGroupElement(PANEL_GROUP_ID);
     const wrapperEl = previewPageWrapperRef.current;
     if (!groupEl || !wrapperEl) return;
 
@@ -951,11 +952,8 @@ export default function ResumesBuilder() {
   }
 
   return (
-    <div
-      ref={previewGroupRef}
-      className="min-h-[560px] flex-1 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
-    >
-      <ResizablePanelGroup direction="horizontal" className="h-full">
+    <>
+      <ResizablePanelGroup id={PANEL_GROUP_ID} direction="horizontal" className="min-h-0 flex-1">
         <ResizablePanel id="file-browser" order={1} defaultSize={18} minSize={12} maxSize={32}>
           <ResumeFileBrowser
             tree={tree}
@@ -1159,6 +1157,6 @@ export default function ResumesBuilder() {
           onConfirm={(t, folderPath) => doSave(t, folderPath)}
         />
       )}
-    </div>
+    </>
   );
 }

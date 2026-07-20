@@ -238,7 +238,7 @@ export default function Home() {
       <main
         className={
           activeTab === "resumes"
-            ? "flex h-screen w-full flex-col gap-6 overflow-hidden px-6 py-8"
+            ? "flex h-screen w-full flex-col overflow-hidden"
             : "mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12"
         }
       >
