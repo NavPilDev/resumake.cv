@@ -105,21 +105,21 @@ export default function SidebarNav({
           collapsed ? "justify-center px-0" : "gap-2 px-4"
         }`}
       >
-        {!collapsed && (
-          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-            Resume Revisioner
-          </span>
-        )}
         <button
           type="button"
           onClick={toggleCollapsed}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={`rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 ${
-            collapsed ? "" : "ml-auto"
+            collapsed ? "" : ""
           }`}
         >
           <MenuIcon />
         </button>
+        {!collapsed && (
+          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Resumake.cv
+          </span>
+        )}
       </div>
 
       <nav className="flex flex-col gap-1 p-2">

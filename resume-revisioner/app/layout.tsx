@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Resume Revisioner",
-  description: "Tailor your resume bullets to a job description.",
+  title: "Resumake.cv",
+  description: "Make Resume Revision Easy, Fast, and Local.",
 };
 
 export default function RootLayout({
