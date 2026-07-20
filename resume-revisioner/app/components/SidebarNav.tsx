@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export type NavTab = "tailor" | "experience";
+export type NavTab = "tailor" | "experience" | "resumes";
 
 interface NavItem {
   id: NavTab;
@@ -30,6 +30,16 @@ function ExperienceIcon() {
   );
 }
 
+function ResumesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 2v5h5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 13h8M8 17h8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function MenuIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -51,6 +61,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "My Experience",
     description: "Build or edit your experience.yaml bullet bank from uploads, pasted text, or the form.",
     icon: <ExperienceIcon />,
+  },
+  {
+    id: "resumes",
+    label: "My Resumes",
+    description: "Create and edit individual tailored resumes, organized into folders under saved/.",
+    icon: <ResumesIcon />,
   },
 ];
 
