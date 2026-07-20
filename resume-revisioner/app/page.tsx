@@ -238,40 +238,37 @@ export default function Home() {
       <main
         className={
           activeTab === "resumes"
-            ? "flex w-full flex-col gap-6 px-6 py-8"
+            ? "flex h-screen w-full flex-col gap-6 overflow-hidden px-6 py-8"
             : "mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12"
         }
       >
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {activeTab === "tailor" ? "Tailor Resume" : "My Experience"}
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {activeTab === "tailor" ? (
-              <>
-                Paste a job description to rank your bullet bank (
-                <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
-                  experience.yaml
-                </code>
-                ) by keyword overlap and surface skill gaps. Nothing is written back to your resume —
-                review and copy in the bullets you want.
-              </>
-            ) : activeTab === "experience" ? (
-              <>
-                Build or edit your{" "}
-                <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
-                  experience.yaml
-                </code>{" "}
-                bullet bank from uploads, pasted text, or the form below.
-              </>
-            ) : (
-              <>
-                Create and edit individual tailored resumes, organized into folders under{" "}
-                <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">saved/</code>.
-              </>
-            )}
-          </p>
-        </header>
+        {activeTab !== "resumes" && (
+          <header>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              {activeTab === "tailor" ? "Tailor Resume" : "My Experience"}
+            </h1>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              {activeTab === "tailor" ? (
+                <>
+                  Paste a job description to rank your bullet bank (
+                  <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
+                    experience.yaml
+                  </code>
+                  ) by keyword overlap and surface skill gaps. Nothing is written back to your resume —
+                  review and copy in the bullets you want.
+                </>
+              ) : (
+                <>
+                  Build or edit your{" "}
+                  <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
+                    experience.yaml
+                  </code>{" "}
+                  bullet bank from uploads, pasted text, or the form below.
+                </>
+              )}
+            </p>
+          </header>
+        )}
 
         {activeTab === "experience" && <ExperienceBuilder />}
 

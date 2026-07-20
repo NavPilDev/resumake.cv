@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Bold, Italic, Underline, Undo2, Redo2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Bold, Italic, Underline, Undo2, Redo2, Download } from "lucide-react";
 import { undo, redo } from "@codemirror/commands";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { toast } from "sonner";
 import { ResumeFileBrowser } from "@/app/components/ResumeFileBrowser";
 import { ResumeSaveLocationModal } from "@/app/components/ResumeSaveLocationModal";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { LatexEditor } from "@/components/ui/latex-editor";
 import { RichBulletEditor } from "@/components/ui/rich-bullet-editor";
@@ -94,6 +95,15 @@ type EditorView = "form" | "latex";
 const MAX_HISTORY = 20;
 const TYPING_COALESCE_MS = 800;
 
+// US Letter aspect ratio the compiled resume page renders at.
+const PAGE_ASPECT_RATIO = 8.5 / 11;
+// The preview aside's own horizontal padding (p-6 = 1.5rem each side) that
+// has to be added on top of the page's own width when deriving the panel's
+// pixel floor from the page's aspect ratio.
+const PREVIEW_ASIDE_HORIZONTAL_PADDING_PX = 48;
+const PREVIEW_MIN_SIZE_PCT_FLOOR = 20;
+const PREVIEW_MIN_SIZE_PCT_CEILING = 60;
+
 interface FormSnapshot {
   selection: ResumeSelection;
   textOverrides: Record<string, string>;
@@ -126,6 +136,58 @@ function ViewToggle({ value, onChange }: { value: EditorView; onChange: (v: Edit
       >
         LaTeX
       </button>
+    </div>
+  );
+}
+
+function DownloadMenu({ pdfHref, texHref }: { pdfHref: string; texHref: string }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <button
+        type="button"
+        title="Download"
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-md border border-zinc-300 p-2 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+      >
+        <Download className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-md border border-zinc-200 bg-white py-1 text-sm shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <a
+            href={pdfHref}
+            onClick={() => setOpen(false)}
+            className="block px-3 py-1.5 text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            Download PDF
+          </a>
+          <a
+            href={texHref}
+            onClick={() => setOpen(false)}
+            className="block px-3 py-1.5 text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            Download LaTeX
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -601,6 +663,51 @@ export default function ResumesBuilder() {
     };
   }, [resumeId, lastCompileAt]);
 
+  // Keeps the preview panel from being resized narrower than what's needed to
+  // show a full resume page at whatever height it currently has (Overleaf-style):
+  // derive the required page width from the page wrapper's live height via the
+  // page's own aspect ratio, then floor the panel's width at that + its padding.
+  const previewGroupRef = useRef<HTMLDivElement>(null);
+  const previewPageWrapperRef = useRef<HTMLDivElement>(null);
+  const previewPanelRef = useRef<ImperativePanelHandle>(null);
+  const [previewMinSizePct, setPreviewMinSizePct] = useState(PREVIEW_MIN_SIZE_PCT_FLOOR);
+
+  useEffect(() => {
+    const groupEl = previewGroupRef.current;
+    const wrapperEl = previewPageWrapperRef.current;
+    if (!groupEl || !wrapperEl) return;
+
+    function recompute() {
+      const groupWidth = groupEl!.getBoundingClientRect().width;
+      const wrapperHeight = wrapperEl!.getBoundingClientRect().height;
+      if (groupWidth <= 0 || wrapperHeight <= 0) return;
+
+      const requiredPageWidthPx = wrapperHeight * PAGE_ASPECT_RATIO;
+      const requiredPanelWidthPx = requiredPageWidthPx + PREVIEW_ASIDE_HORIZONTAL_PADDING_PX;
+      const pct = Math.min(
+        PREVIEW_MIN_SIZE_PCT_CEILING,
+        Math.max(PREVIEW_MIN_SIZE_PCT_FLOOR, (requiredPanelWidthPx / groupWidth) * 100)
+      );
+      setPreviewMinSizePct(pct);
+
+      const currentSize = previewPanelRef.current?.getSize();
+      if (currentSize !== undefined && currentSize < pct) {
+        previewPanelRef.current?.resize(pct);
+      }
+    }
+
+    recompute();
+    const observer = new ResizeObserver(recompute);
+    observer.observe(groupEl);
+    observer.observe(wrapperEl);
+    // Belt-and-suspenders alongside ResizeObserver for the whole-window-resize case.
+    window.addEventListener("resize", recompute);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", recompute);
+    };
+  }, [mode]);
+
   if (experienceLoading || treeLoading) {
     return <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>;
   }
@@ -845,11 +952,11 @@ export default function ResumesBuilder() {
 
   return (
     <div
-      className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
-      style={{ height: "calc(100vh - 220px)", minHeight: 560 }}
+      ref={previewGroupRef}
+      className="min-h-[560px] flex-1 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
     >
       <ResizablePanelGroup direction="horizontal" className="h-full">
-        <ResizablePanel defaultSize={18} minSize={12} maxSize={32}>
+        <ResizablePanel id="file-browser" order={1} defaultSize={18} minSize={12} maxSize={32}>
           <ResumeFileBrowser
             tree={tree}
             selectedId={resumeId}
@@ -862,14 +969,14 @@ export default function ResumesBuilder() {
         <ResizableHandle withHandle />
 
         {mode === "browse" ? (
-          <ResizablePanel defaultSize={82} minSize={30}>
+          <ResizablePanel id="browse-placeholder" order={2} defaultSize={82} minSize={30}>
             <div className="flex h-full items-center justify-center text-center text-sm text-zinc-500 dark:text-zinc-400">
               Select a saved resume on the left, or click the new-resume button to create one.
             </div>
           </ResizablePanel>
         ) : (
           <>
-            <ResizablePanel defaultSize={54} minSize={30}>
+            <ResizablePanel id="editor" order={2} defaultSize={42} minSize={25}>
               <div className="flex h-full flex-col">
                 <div className="flex shrink-0 items-center justify-between gap-4 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
                   <span className="truncate text-sm text-zinc-700 dark:text-zinc-300">
@@ -978,9 +1085,15 @@ export default function ResumesBuilder() {
 
             <ResizableHandle withHandle />
 
-            <ResizablePanel defaultSize={28} minSize={20}>
-              <aside className="flex h-full flex-col gap-3 overflow-y-auto p-6">
-                <div className="flex items-center gap-2">
+            <ResizablePanel
+              id="preview"
+              order={3}
+              ref={previewPanelRef}
+              defaultSize={40}
+              minSize={previewMinSizePct}
+            >
+              <aside className="flex h-full flex-col gap-3 overflow-hidden p-6">
+                <div className="flex shrink-0 items-center gap-2">
                   {resumeId ? (
                     <input
                       value={title}
@@ -1003,40 +1116,34 @@ export default function ResumesBuilder() {
                   >
                     {saving ? "Saving…" : "Save"}
                   </button>
-                </div>
-
-                {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
-
-                <div className="aspect-[8.5/11] w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
-                  {resumeId && lastCompileAt ? (
-                    <iframe
-                      src={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}#toolbar=0&navpanes=0`}
-                      className="h-full w-full"
-                      title="Resume preview"
+                  {resumeId && (
+                    <DownloadMenu
+                      pdfHref={`/api/resumes/${resumeId}/pdf?download=1`}
+                      texHref={`/api/resumes/${resumeId}/tex`}
                     />
-                  ) : (
-                    <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      Save to generate a preview.
-                    </div>
                   )}
                 </div>
 
-                {resumeId && (
-                  <div className="flex gap-4 text-sm">
-                    <a
-                      href={`/api/resumes/${resumeId}/pdf?download=1`}
-                      className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-                    >
-                      Download PDF
-                    </a>
-                    <a
-                      href={`/api/resumes/${resumeId}/tex`}
-                      className="text-zinc-700 underline hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-                    >
-                      Download .tex
-                    </a>
+                {saveError && <p className="shrink-0 text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+
+                <div
+                  ref={previewPageWrapperRef}
+                  className="flex min-h-0 flex-1 items-center justify-center"
+                >
+                  <div className="aspect-[8.5/11] h-full max-w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+                    {resumeId && lastCompileAt ? (
+                      <iframe
+                        src={`/api/resumes/${resumeId}/pdf?t=${encodeURIComponent(lastCompileAt)}#toolbar=0&navpanes=0`}
+                        className="h-full w-full"
+                        title="Resume preview"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                        Save to generate a preview.
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </aside>
             </ResizablePanel>
           </>
