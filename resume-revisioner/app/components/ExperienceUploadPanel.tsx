@@ -342,7 +342,7 @@ function groupBySourceKey<T>(
   return { resolved, groups };
 }
 
-const META_TEXT_FIELDS = ["name", "email", "phone", "linkedin", "github", "website"] as const;
+const META_TEXT_FIELDS = ["name", "email", "phone", "citizenship_status", "linkedin", "github", "website"] as const;
 type MetaTextField = (typeof META_TEXT_FIELDS)[number];
 
 interface MetaFieldConflict {
@@ -418,6 +418,7 @@ const META_FIELD_LABELS: Record<MetaTextField, string> = {
   name: "name",
   email: "email",
   phone: "phone",
+  citizenship_status: "citizenship / work authorization",
   linkedin: "linkedin",
   github: "github",
   website: "website",
@@ -740,6 +741,17 @@ export default function ExperienceUploadPanel({
             className={inputClass}
             value={experience.meta.phone ?? ""}
             onChange={(e) => onChange({ meta: { ...experience.meta, phone: e.target.value || undefined } })}
+          />
+        </label>
+        <label className={labelClass}>
+          Citizenship / work authorization
+          <input
+            className={inputClass}
+            placeholder="e.g. U.S. Citizen, Green Card Holder, H1B"
+            value={experience.meta.citizenship_status ?? ""}
+            onChange={(e) =>
+              onChange({ meta: { ...experience.meta, citizenship_status: e.target.value || undefined } })
+            }
           />
         </label>
         <label className={labelClass}>

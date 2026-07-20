@@ -101,6 +101,10 @@ export interface Meta {
   linkedin: string;
   github: string;
   website: string;
+  /** Free-text work authorization status (e.g. "U.S. Citizen", "Green Card
+   * Holder", "H1B Visa — sponsorship required") — reference info for filling
+   * out job applications, never printed on the generated resume itself. */
+  citizenship_status?: string;
   /** Anything beyond linkedin/github/website above (Instagram, portfolio
    * mirrors, etc.) — reference metadata only, never fetched/scraped. */
   social_links?: SocialLink[];
