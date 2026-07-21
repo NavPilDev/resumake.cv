@@ -1,3 +1,4 @@
+import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import { resolveRepoRoot } from "./repoPaths";
@@ -34,9 +35,23 @@ export function sanitizeFolderOrTitleName(name: string): string {
   return cleaned;
 }
 
+/** Marks a directory hidden in Windows Explorer (a leading dot alone doesn't
+ * hide anything on Windows, unlike Unix). Best-effort — if `attrib` isn't
+ * on PATH for some reason, the folder just stays visible, which is harmless
+ * since nothing about the build pipeline depends on it being hidden. */
+function hideOnWindows(dirPath: string): void {
+  if (process.platform !== "win32") return;
+  try {
+    execFileSync("attrib", ["+h", dirPath], { windowsHide: true });
+  } catch {
+    // Non-fatal — see doc comment above.
+  }
+}
+
 export function resolveSavedBuildDir(): string {
   const buildDir = path.join(resolveSavedRoot(), BUILD_DIR_NAME);
   fs.mkdirSync(buildDir, { recursive: true });
+  hideOnWindows(buildDir);
   const rcPath = path.join(buildDir, ".latexmkrc");
   if (!fs.existsSync(rcPath)) {
     fs.writeFileSync(
@@ -150,6 +165,10 @@ export function listResumeTree(): ResumeTreeNode[] {
   return walk(resolveSavedRoot(), "");
 }
 
+/** Manifest filenames are the resume's (sanitized) title, not its id — see
+ * writeManifest/overwriteManifestAtPath — so finding a resume by id has to
+ * open and check each manifest's contents rather than matching a filename.
+ * Fine at personal-resume scale (see listResumeTree's doc comment). */
 export function findManifestPath(id: string): string | null {
   const root = resolveSavedRoot();
   function search(dirAbs: string): string | null {
@@ -160,8 +179,13 @@ export function findManifestPath(id: string): string | null {
       if (entry.isDirectory()) {
         const found = search(abs);
         if (found) return found;
-      } else if (entry.name === `${id}.json`) {
-        return abs;
+      } else if (entry.isFile() && entry.name.endsWith(".json")) {
+        try {
+          const manifest: Partial<ResumeManifest> = JSON.parse(fs.readFileSync(abs, "utf8"));
+          if (manifest.id === id) return abs;
+        } catch {
+          // Skip unreadable/malformed manifests rather than failing the search.
+        }
       }
     }
     return null;
@@ -195,14 +219,52 @@ export function loadManifest(id: string): ResumeManifest | null {
   };
 }
 
-export function writeManifest(folderPath: string, manifest: ResumeManifest): void {
-  const dir = resolveSavedPath(folderPath);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${manifest.id}.json`), JSON.stringify(manifest, null, 2), "utf8");
+/** Derives the human-readable base filename (no extension) a manifest with
+ * this title should use on disk — sanitized the same way user-created
+ * folder names are, so both look consistent side by side in a native file
+ * browser. */
+function manifestBaseName(title: string): string {
+  try {
+    return sanitizeFolderOrTitleName(title);
+  } catch {
+    return "Untitled resume";
+  }
 }
 
-export function overwriteManifestAtPath(manifestPath: string, manifest: ResumeManifest): void {
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+/** Picks `${desiredBase}.json`, or `${desiredBase} (2).json`, `(3)`, etc. if
+ * that name is already taken in `dir` — the same disambiguation scheme
+ * Windows/macOS file browsers use for copy/paste name collisions. */
+function uniqueManifestFilename(dir: string, desiredBase: string): string {
+  let candidate = `${desiredBase}.json`;
+  for (let n = 2; fs.existsSync(path.join(dir, candidate)); n++) {
+    candidate = `${desiredBase} (${n}).json`;
+  }
+  return candidate;
+}
+
+export function writeManifest(folderPath: string, manifest: ResumeManifest): string {
+  const dir = resolveSavedPath(folderPath);
+  fs.mkdirSync(dir, { recursive: true });
+  const target = path.join(dir, uniqueManifestFilename(dir, manifestBaseName(manifest.title)));
+  fs.writeFileSync(target, JSON.stringify(manifest, null, 2), "utf8");
+  return target;
+}
+
+/** Overwrites a manifest in place, keeping its on-disk filename in sync with
+ * its title — if the title changed since this path was last written, the
+ * file is renamed (to a disambiguated name if something else in the same
+ * folder now has that name) rather than left stale under its old title. */
+export function overwriteManifestAtPath(manifestPath: string, manifest: ResumeManifest): string {
+  const dir = path.dirname(manifestPath);
+  const desiredBase = manifestBaseName(manifest.title);
+  const currentBase = path.basename(manifestPath, ".json");
+  const target =
+    currentBase === desiredBase
+      ? manifestPath
+      : path.join(dir, uniqueManifestFilename(dir, desiredBase));
+  fs.writeFileSync(target, JSON.stringify(manifest, null, 2), "utf8");
+  if (target !== manifestPath) fs.rmSync(manifestPath, { force: true });
+  return target;
 }
 
 /** Moves a saved resume's manifest json to a different folder under /saved
@@ -214,8 +276,8 @@ export function moveManifest(id: string, targetFolderPath: string): string {
   if (!sourcePath) throw new Error("Resume not found.");
   const targetDir = resolveSavedPath(targetFolderPath);
   fs.mkdirSync(targetDir, { recursive: true });
-  const targetPath = path.join(targetDir, `${id}.json`);
-  if (path.resolve(targetPath) === path.resolve(sourcePath)) return targetPath;
+  if (path.resolve(targetDir) === path.resolve(path.dirname(sourcePath))) return sourcePath;
+  const targetPath = path.join(targetDir, uniqueManifestFilename(targetDir, path.basename(sourcePath, ".json")));
   fs.renameSync(sourcePath, targetPath);
   return targetPath;
 }
