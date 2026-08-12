@@ -1,4 +1,5 @@
 fastapi[standard]
-chromadb 
+chromadb
 sentence-transformers
 ollama
+httpx

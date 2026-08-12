@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "resume-revisioner",
+      "name": "resumake-client",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "resume-revisioner", "run", "dev"],
+      "runtimeArgs": ["--prefix", "resumake/client", "run", "dev"],
       "port": 3000,
       "autoPort": true
     }
