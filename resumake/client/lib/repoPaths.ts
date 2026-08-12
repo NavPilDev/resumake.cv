@@ -21,7 +21,7 @@ export function resolveRepoPath(relative: string): string {
  * to already exist. Needed for anything that creates new files/dirs under
  * the repo root (e.g. /saved) rather than reading something already there. */
 export function resolveRepoRoot(): string {
-  return path.basename(process.cwd()) === "resume-revisioner"
+  return path.basename(process.cwd()) === "resumake"
     ? path.join(process.cwd(), "..")
     : process.cwd();
 }
