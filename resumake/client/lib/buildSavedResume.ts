@@ -1,4 +1,4 @@
-import type { BuildResumeTexInput } from "./latexTemplate";
+import type { BuildResumeTexInput, SpacingSettings } from "./latexTemplate";
 import { compileLatex, type CompileResult } from "./latexCompile";
 import { resolveSavedBuildDir, type ResumeSelection, type SectionSelection } from "./resumeFiles";
 import type { ExperienceData, GenerateResumeSectionInput, JobEntry, ProjectEntry } from "./types";
@@ -57,7 +57,8 @@ function projectToSectionInput(
 export function selectionToTemplateInput(
   experience: ExperienceData,
   selection: ResumeSelection,
-  textOverrides: Record<string, string>
+  textOverrides: Record<string, string>,
+  spacing?: Partial<SpacingSettings>
 ): BuildResumeTexInput {
   const jobs = experience.jobs
     .map((job) => (job.id ? jobToSectionInput(job, selection.jobs[job.id], textOverrides) : null))
@@ -94,6 +95,7 @@ export function selectionToTemplateInput(
     jobs,
     projects,
     certifications,
+    spacing,
   };
 }
 

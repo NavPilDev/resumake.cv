@@ -68,7 +68,7 @@ const PREAMBLE = String.raw`\documentclass[letterpaper,11pt]{article}
     \begin{tabular*}{1.0\textwidth}[t]{l@{\extracolsep{\fill}}r}
       \textbf{#1} & \textbf{\small #2} \\
       \textit{\small#3} & \textit{\small #4} \\
-    \end{tabular*}\vspace{-7pt}
+    \end{tabular*}
 }
 
 \newcommand{\resumeSubSubheading}[2]{
@@ -85,7 +85,7 @@ const PREAMBLE = String.raw`\documentclass[letterpaper,11pt]{article}
     \end{tabular*}\vspace{-7pt}
 }
 
-\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}}
 
 \renewcommand\labelitemi{$\vcenter{\hbox{\tiny$\bullet$}}$}
 \renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
@@ -93,8 +93,46 @@ const PREAMBLE = String.raw`\documentclass[letterpaper,11pt]{article}
 \newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.0in, label={}]}
 \newcommand{\resumeSubHeadingListEnd}{\end{itemize}}\vspace{0pt}
 \newcommand{\resumeItemListStart}{\begin{itemize}}
-\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+\newcommand{\resumeItemListEnd}{\end{itemize}}
 `;
+
+/** User-adjustable vertical spacing knobs (in pt, LaTeX's `\vspace{Npt}`
+ * unit) — each maps to a `\vspace` that used to be a hardcoded constant
+ * baked into a shared macro or build function. Values are typically
+ * negative (LaTeX's usual idiom here for pulling content closer together);
+ * a more negative number tightens spacing, a less negative/positive number
+ * loosens it. Defaults reproduce the resume's original fixed layout. */
+export interface SpacingSettings {
+  /** Gap between Education entries (Education has no bullets, so this is
+   * the entry's own trailing space, not a separate "after bullets" gap). */
+  educationEntryGap: number;
+  /** Gap between Work Experience entries (after one job's bullets end,
+   * before the next job's heading starts). */
+  jobsEntryGap: number;
+  /** Gap after the whole Work Experience section, before Projects. */
+  jobsSectionGap: number;
+  /** Gap between Project entries. */
+  projectsEntryGap: number;
+  /** Gap after the whole Projects section, before Technical Skills. */
+  projectsSectionGap: number;
+  /** Gap between Certification lines. */
+  certificationsEntryGap: number;
+  /** Gap between Technical Skills category lines. */
+  skillsLineGap: number;
+  /** Gap after the Technical Skills section (end of document). */
+  skillsSectionGap: number;
+}
+
+export const DEFAULT_SPACING: SpacingSettings = {
+  educationEntryGap: -7,
+  jobsEntryGap: -5,
+  jobsSectionGap: -12,
+  projectsEntryGap: -5,
+  projectsSectionGap: -12,
+  certificationsEntryGap: -4,
+  skillsLineGap: 3,
+  skillsSectionGap: -16,
+};
 
 const CATEGORY_LABEL_OVERRIDES: Record<string, string> = {
   ai_ml_and_robotics: "AI/ML \\& Robotics",
@@ -170,14 +208,15 @@ function buildHeader(meta: Meta): string {
 \end{center}`;
 }
 
-function buildEducation(education: EducationEntry[]): string {
+function buildEducation(education: EducationEntry[], spacing: SpacingSettings): string {
   if (education.length === 0) return "";
   const entries = education
     .map((e) => {
       const anchorLine = e.id ? `    ${anchorComment("education", e.id)}\n` : "";
       return String.raw`${anchorLine}    \resumeSubheading
       {${escapeLatex(e.institution)}}{${escapeLatex(e.location ?? "")}}
-      {${escapeLatex(e.credential)}}{${escapeLatex(e.dates)}}`;
+      {${escapeLatex(e.credential)}}{${escapeLatex(e.dates)}}
+    \vspace{${spacing.educationEntryGap}pt}`;
     })
     .join("\n");
 
@@ -188,7 +227,7 @@ ${entries}
   \resumeSubHeadingListEnd`;
 }
 
-function buildExperience(jobs: GenerateResumeSectionInput[]): string {
+function buildExperience(jobs: GenerateResumeSectionInput[], spacing: SpacingSettings): string {
   if (jobs.length === 0) return "";
   const entries = jobs
     .map((job) => {
@@ -201,9 +240,11 @@ function buildExperience(jobs: GenerateResumeSectionInput[]): string {
         .join("\n");
       return String.raw`                ${anchorComment("jobs", job.id)}
                 \resumeSubheading{${escapeLatex(job.company ?? "")}}{${escapeLatex(job.dates)}}{${escapeLatex(job.role ?? "")}}{${escapeLatex(job.location ?? "")}}
+                \vspace{-7pt}
                 \resumeItemListStart
 ${bullets}
-                    \resumeItemListEnd`;
+                    \resumeItemListEnd
+                \vspace{${spacing.jobsEntryGap}pt}`;
     })
     .join("\n");
 
@@ -212,10 +253,10 @@ ${bullets}
     \resumeSubHeadingListStart
 ${entries}
     \resumeSubHeadingListEnd
-    \vspace{-12pt}`;
+    \vspace{${spacing.jobsSectionGap}pt}`;
 }
 
-function buildProjects(projects: GenerateResumeSectionInput[]): string {
+function buildProjects(projects: GenerateResumeSectionInput[], spacing: SpacingSettings): string {
   if (projects.length === 0) return "";
   const entries = projects
     .map((project) => {
@@ -235,7 +276,8 @@ function buildProjects(projects: GenerateResumeSectionInput[]): string {
             {${titleLine}}{${escapeLatex(project.dates)}}
             \resumeItemListStart
 ${bullets}
-            \resumeItemListEnd`;
+            \resumeItemListEnd
+        \vspace{${spacing.projectsEntryGap}pt}`;
     })
     .join("\n\n");
 
@@ -247,10 +289,10 @@ ${bullets}
 ${entries}
 
     \resumeSubHeadingListEnd
- \vspace{-12pt}`;
+ \vspace{${spacing.projectsSectionGap}pt}`;
 }
 
-function buildCertifications(certifications: Certification[]): string {
+function buildCertifications(certifications: Certification[], spacing: SpacingSettings): string {
   if (certifications.length === 0) return "";
   const entries = certifications
     .map((c) => {
@@ -259,7 +301,8 @@ function buildCertifications(certifications: Certification[]): string {
         .map(escapeLatex)
         .join(" -- ");
       return String.raw`    ${anchorComment("certifications", c.id)}
-    \resumeSubItem{\textbf{${escapeLatex(c.name)}}${meta ? ` (${meta})` : ""}}`;
+    \resumeSubItem{\textbf{${escapeLatex(c.name)}}${meta ? ` (${meta})` : ""}}
+    \vspace{${spacing.certificationsEntryGap}pt}`;
     })
     .join("\n");
 
@@ -270,7 +313,7 @@ ${entries}
   \resumeSubHeadingListEnd`;
 }
 
-function buildSkills(technicalSkills: TechnicalSkills): string {
+function buildSkills(technicalSkills: TechnicalSkills, spacing: SpacingSettings): string {
   const entries = Object.entries(technicalSkills).filter(
     ([, entries]) => Array.isArray(entries) && entries.length > 0
   );
@@ -280,7 +323,7 @@ function buildSkills(technicalSkills: TechnicalSkills): string {
       const skillList = entries.map((e) => escapeLatex(e.skill)).join(", ");
       return (
         `     ${anchorComment("skills", category)}\n` +
-        `     \\textbf{${humanizeCategory(category)}}{: ${skillList}} \\\\[1mm]`
+        `     \\textbf{${humanizeCategory(category)}}{: ${skillList}} \\\\[${spacing.skillsLineGap}pt]`
       );
     })
     .join("\n");
@@ -292,7 +335,7 @@ function buildSkills(technicalSkills: TechnicalSkills): string {
 ${lines}
     }}
  \end{itemize}
- \vspace{-16pt}`;
+ \vspace{${spacing.skillsSectionGap}pt}`;
 }
 
 export interface BuildResumeTexInput {
@@ -304,9 +347,13 @@ export interface BuildResumeTexInput {
   /** Optional — existing callers (e.g. the JD-tailoring flow) that don't
    * pass this render no certifications section, unchanged from before. */
   certifications?: Certification[];
+  /** Optional — defaults to the resume's original fixed spacing (see
+   * DEFAULT_SPACING) for callers that don't have per-resume overrides. */
+  spacing?: Partial<SpacingSettings>;
 }
 
 export function buildResumeTex(input: BuildResumeTexInput): string {
+  const spacing: SpacingSettings = { ...DEFAULT_SPACING, ...input.spacing };
   const parts = [
     PREAMBLE,
     "",
@@ -314,11 +361,11 @@ export function buildResumeTex(input: BuildResumeTexInput): string {
     "",
     buildHeader(input.meta),
     "",
-    buildEducation(input.education),
-    input.certifications?.length ? buildCertifications(input.certifications) : "",
-    buildExperience(input.jobs),
-    buildProjects(input.projects),
-    buildSkills(input.technicalSkills),
+    buildEducation(input.education, spacing),
+    input.certifications?.length ? buildCertifications(input.certifications, spacing) : "",
+    buildExperience(input.jobs, spacing),
+    buildProjects(input.projects, spacing),
+    buildSkills(input.technicalSkills, spacing),
     "",
     "\\end{document}",
     "",

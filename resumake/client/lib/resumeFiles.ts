@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { resolveResumakeMediaRoot } from "./repoPaths";
 import { CONTACT_FIELDS } from "./contactFields";
+import { DEFAULT_SPACING, type SpacingSettings } from "./latexTemplate";
 
 /** Compiled-artifact scratch space, shared by every saved resume regardless
  * of which user-facing folder its manifest lives in — latexmk only reads
@@ -128,6 +129,11 @@ export interface ResumeManifest {
    * precedence over a stale hand-edit once the user acts on them again. */
   rawLatexOverride: string | null;
   lastCompile: { pagesUsed: number | null; compiledAt: string; warnings?: string[] } | null;
+  /** Per-resume vertical spacing overrides, set from the Form view's
+   * Settings section — see lib/latexTemplate.ts's SpacingSettings. Optional
+   * on disk (older manifests predate this field); normalizeSpacing fills in
+   * DEFAULT_SPACING for anything missing when loading. */
+  spacing?: Partial<SpacingSettings>;
 }
 
 export interface ResumeCreateRequest {
@@ -136,6 +142,7 @@ export interface ResumeCreateRequest {
   selection: ResumeSelection;
   textOverrides: Record<string, string>;
   rawLatexOverride?: string | null;
+  spacing?: Partial<SpacingSettings>;
 }
 
 export interface ResumeUpdateRequest {
@@ -143,6 +150,7 @@ export interface ResumeUpdateRequest {
   selection: ResumeSelection;
   textOverrides: Record<string, string>;
   rawLatexOverride?: string | null;
+  spacing?: Partial<SpacingSettings>;
 }
 
 export type ResumeTreeNode =
@@ -230,6 +238,12 @@ function normalizeSelection(selection: Partial<ResumeSelection> | undefined): Re
   };
 }
 
+/** Fills in any spacing knobs absent from a manifest written before they
+ * existed (or before a specific knob was added) with DEFAULT_SPACING. */
+function normalizeSpacing(spacing: Partial<SpacingSettings> | undefined): SpacingSettings {
+  return { ...DEFAULT_SPACING, ...spacing };
+}
+
 export function loadManifest(id: string): ResumeManifest | null {
   const manifestPath = findManifestPath(id);
   if (!manifestPath) return null;
@@ -238,6 +252,7 @@ export function loadManifest(id: string): ResumeManifest | null {
     ...manifest,
     selection: normalizeSelection(manifest.selection),
     rawLatexOverride: manifest.rawLatexOverride ?? null,
+    spacing: normalizeSpacing(manifest.spacing),
   };
 }
 

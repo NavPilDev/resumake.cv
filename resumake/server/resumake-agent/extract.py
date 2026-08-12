@@ -35,6 +35,14 @@ output. If an array field (details, links, social_links, bullets, etc.) has
 no real data in the source text, omit that key entirely rather than
 including an empty or placeholder-filled array.
 
+The same rule applies to individual scalar fields, not just arrays: if the
+source doesn't state a job/project's dates, an institution's location, or
+any other single field, OMIT THAT KEY from the object entirely. Never fill
+a field you're unsure about with a placeholder word or phrase — "unknown",
+"n/a", "N/A", "TBD", "not specified", "present" (unless the source itself
+says the role/project is ongoing), or any other filler. An omitted key is
+always correct; a guessed one is not.
+
 Do NOT extract technical skills/tools/languages/frameworks here — those are
 handled by a separate pass, so ignore any "Skills" section of the source text
 for this task.

@@ -65,7 +65,8 @@ export async function PUT(
         : null;
     const existing = loadManifest(id);
     const experience = await loadExperience();
-    const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides);
+    const spacing = body.spacing ?? existing?.spacing;
+    const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides, spacing);
     const tex = rawLatexOverride ?? buildResumeTex(templateInput);
     const compileResult = await compileSavedResume(id, tex);
 
@@ -78,6 +79,7 @@ export async function PUT(
       selection: body.selection,
       textOverrides: body.textOverrides,
       rawLatexOverride,
+      spacing,
       lastCompile: { pagesUsed: compileResult.pages, compiledAt: now },
     };
     overwriteManifestAtPath(manifestPath, manifest);

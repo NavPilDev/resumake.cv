@@ -17,6 +17,7 @@ import { RichBulletEditor } from "@/components/ui/rich-bullet-editor";
 import { humanizeSkillCategory } from "@/lib/technicalSkillCategory";
 import { cn } from "@/lib/utils";
 import { CONTACT_FIELDS } from "@/lib/contactFields";
+import { DEFAULT_SPACING, type SpacingSettings } from "@/lib/latexTemplate";
 import type {
   ResumeManifest,
   ResumeSelection,
@@ -45,7 +46,15 @@ function emptySelection(): ResumeSelection {
   };
 }
 
-type SectionKey = "toc" | "contact" | "education" | "jobs" | "projects" | "certifications" | "skills";
+type SectionKey =
+  | "toc"
+  | "contact"
+  | "education"
+  | "jobs"
+  | "projects"
+  | "certifications"
+  | "skills"
+  | "settings";
 
 const sectionLabels: Record<SectionKey, string> = {
   toc: "All Sections",
@@ -55,6 +64,7 @@ const sectionLabels: Record<SectionKey, string> = {
   projects: "Projects",
   certifications: "Certifications",
   skills: "Technical Skills",
+  settings: "Settings",
 };
 
 const sectionCardClass =
@@ -251,6 +261,7 @@ export default function ResumesBuilder() {
   const [title, setTitle] = useState("");
   const [selection, setSelection] = useState<ResumeSelection>(emptySelection());
   const [textOverrides, setTextOverrides] = useState<Record<string, string>>({});
+  const [spacing, setSpacing] = useState<SpacingSettings>(DEFAULT_SPACING);
   const [lastCompileAt, setLastCompileAt] = useState<string | null>(null);
 
   const [dirty, setDirty] = useState(false);
@@ -324,6 +335,7 @@ export default function ResumesBuilder() {
     setTitle("");
     setSelection(emptySelection());
     setTextOverrides({});
+    setSpacing(DEFAULT_SPACING);
     setLastCompileAt(null);
     setSaveError(null);
     setDirty(true);
@@ -348,6 +360,7 @@ export default function ResumesBuilder() {
       setTitle(manifest.title);
       setSelection(manifest.selection);
       setTextOverrides(manifest.textOverrides);
+      setSpacing({ ...DEFAULT_SPACING, ...manifest.spacing });
       setLastCompileAt(manifest.lastCompile?.compiledAt ?? manifest.updatedAt);
       setDirty(false);
       setUndoStack([]);
@@ -571,6 +584,7 @@ export default function ResumesBuilder() {
             selection,
             textOverrides,
             rawLatexOverride,
+            spacing,
           }),
         });
         const data = await res.json();
@@ -589,7 +603,7 @@ export default function ResumesBuilder() {
         const res = await fetch(`/api/resumes/${resumeId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: finalTitle, selection, textOverrides, rawLatexOverride }),
+          body: JSON.stringify({ title: finalTitle, selection, textOverrides, rawLatexOverride, spacing }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
@@ -907,6 +921,11 @@ export default function ResumesBuilder() {
           summary={`${selection.technicalSkillCategories.length}/${skillCategories.length} categories`}
           onClick={() => setActiveSection("skills")}
         />
+        <TocRow
+          label="Settings"
+          summary="Spacing"
+          onClick={() => setActiveSection("settings")}
+        />
       </div>
     );
   }
@@ -1121,6 +1140,82 @@ export default function ResumesBuilder() {
     );
   }
 
+  function updateSpacing(key: keyof SpacingSettings, value: number) {
+    setSpacing((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  }
+
+  function SpacingField({ label, keyName }: { label: string; keyName: keyof SpacingSettings }) {
+    return (
+      <label className={cn(simpleRowClass, "justify-between")}>
+        <span>{label}</span>
+        <span className="flex items-center gap-1">
+          <input
+            type="number"
+            step={0.5}
+            value={spacing[keyName]}
+            onChange={(e) => updateSpacing(keyName, Number(e.target.value) || 0)}
+            className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">pt</span>
+        </span>
+      </label>
+    );
+  }
+
+  function renderSettingsSection() {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionHeader label="Settings" onBack={() => setActiveSection("toc")} />
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Fine-tune the vertical spacing (LaTeX <code>\vspace</code>) between elements in the
+          compiled resume. More negative values pull content closer together; less negative (or
+          positive) values add room. Save to see the effect in the preview.
+        </p>
+
+        <div className={sectionCardClass}>
+          <h4 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Education</h4>
+          <SpacingField label="Between entries" keyName="educationEntryGap" />
+        </div>
+
+        <div className={sectionCardClass}>
+          <h4 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Work Experience</h4>
+          <SpacingField label="Between entries" keyName="jobsEntryGap" />
+          <SpacingField label="After section" keyName="jobsSectionGap" />
+        </div>
+
+        <div className={sectionCardClass}>
+          <h4 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Projects</h4>
+          <SpacingField label="Between entries" keyName="projectsEntryGap" />
+          <SpacingField label="After section" keyName="projectsSectionGap" />
+        </div>
+
+        {certifications.length > 0 && (
+          <div className={sectionCardClass}>
+            <h4 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Certifications</h4>
+            <SpacingField label="Between entries" keyName="certificationsEntryGap" />
+          </div>
+        )}
+
+        <div className={sectionCardClass}>
+          <h4 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Technical Skills</h4>
+          <SpacingField label="Between lines" keyName="skillsLineGap" />
+          <SpacingField label="After section" keyName="skillsSectionGap" />
+        </div>
+
+        <button
+          onClick={() => {
+            setSpacing(DEFAULT_SPACING);
+            setDirty(true);
+          }}
+          className="self-start text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        >
+          Reset to defaults
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
       <ResizablePanelGroup id={PANEL_GROUP_ID} direction="horizontal" className="min-h-0 flex-1">
@@ -1249,6 +1344,7 @@ export default function ResumesBuilder() {
                     {activeSection === "projects" && renderProjectsSection()}
                     {activeSection === "certifications" && renderCertificationsSection()}
                     {activeSection === "skills" && renderSkillsSection()}
+                    {activeSection === "settings" && renderSettingsSection()}
                   </div>
                 )}
               </div>
