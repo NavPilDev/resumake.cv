@@ -1,7 +1,7 @@
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
-import { resolveRepoRoot } from "./repoPaths";
+import { resolveResumakeMediaRoot } from "./repoPaths";
 import { CONTACT_FIELDS } from "./contactFields";
 
 /** Compiled-artifact scratch space, shared by every saved resume regardless
@@ -10,21 +10,26 @@ import { CONTACT_FIELDS } from "./contactFields";
  * shared build dir avoids needing one .latexmkrc per user-created folder. */
 const BUILD_DIR_NAME = ".build";
 
+/** "My Resumes" tab's saved-manifest tree root: resumake-media/resumes,
+ * alongside that same directory's example-resume fixtures (ignored by
+ * listResumeTree's walk() below, since it only recognizes folders and
+ * .json manifests) and the resumake-media/cover-letters directory. */
 export function resolveSavedRoot(): string {
-  const root = path.join(resolveRepoRoot(), "saved");
+  const root = path.join(resolveResumakeMediaRoot(), "resumes");
   fs.mkdirSync(root, { recursive: true });
   return root;
 }
 
-/** Joins user-supplied path segments onto the /saved root and verifies the
- * resolved absolute path never escapes it — folder/resume names arrive from
- * API request bodies, so this is the single choke point guarding every
- * write under /saved against `..`, absolute-path, or drive-letter injection. */
+/** Joins user-supplied path segments onto the saved-resumes root and
+ * verifies the resolved absolute path never escapes it — folder/resume
+ * names arrive from API request bodies, so this is the single choke point
+ * guarding every write under it against `..`, absolute-path, or
+ * drive-letter injection. */
 export function resolveSavedPath(...segments: string[]): string {
   const root = resolveSavedRoot();
   const resolved = path.resolve(root, ...segments);
   if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error("Path escapes the /saved directory.");
+    throw new Error("Path escapes the saved-resumes directory.");
   }
   return resolved;
 }
@@ -48,19 +53,36 @@ function hideOnWindows(dirPath: string): void {
   }
 }
 
+const DEFAULT_LATEXMKRC =
+  "$aux_dir = 'build';\n$out_dir = 'out';\n$pdf_mode = 1;\n$synctex = 1;\n$pdflatex = 'pdflatex -synctex=1 %O %S';\n";
+
+/** Seeds a directory with the standard aux_dir=build/out_dir=out .latexmkrc
+ * every latexmk-driven scratch dir in this app needs, if it doesn't already
+ * have one. */
+function ensureLatexmkrc(dir: string): void {
+  const rcPath = path.join(dir, ".latexmkrc");
+  if (!fs.existsSync(rcPath)) fs.writeFileSync(rcPath, DEFAULT_LATEXMKRC, "utf8");
+}
+
 export function resolveSavedBuildDir(): string {
   const buildDir = path.join(resolveSavedRoot(), BUILD_DIR_NAME);
   fs.mkdirSync(buildDir, { recursive: true });
   hideOnWindows(buildDir);
-  const rcPath = path.join(buildDir, ".latexmkrc");
-  if (!fs.existsSync(rcPath)) {
-    fs.writeFileSync(
-      rcPath,
-      "$aux_dir = 'build';\n$out_dir = 'out';\n$pdf_mode = 1;\n$synctex = 1;\n$pdflatex = 'pdflatex -synctex=1 %O %S';\n",
-      "utf8"
-    );
-  }
+  ensureLatexmkrc(buildDir);
   return buildDir;
+}
+
+/** Scratch + output directory for the "Tailor Resume" tab's one-shot
+ * "Generate Resume" flow — separate from the "My Resumes" tab's saved
+ * manifest tree above (resolveSavedRoot), but still under the same
+ * resumake-media/resumes root. Dot-prefixed so listResumeTree()'s walk()
+ * (which already skips dotfiles and BUILD_DIR_NAME) never surfaces it in
+ * the file browser. */
+export function resolveGeneratedResumesDir(): string {
+  const dir = path.join(resolveSavedRoot(), ".generated");
+  fs.mkdirSync(dir, { recursive: true });
+  ensureLatexmkrc(dir);
+  return dir;
 }
 
 export function createFolder(parentPath: string, name: string): string {
@@ -158,9 +180,9 @@ function walk(dirAbs: string, relPath: string): ResumeTreeNode[] {
   return nodes;
 }
 
-/** Walks the whole /saved tree (skipping .build). Fine at personal-resume
- * scale — no id->path index is maintained since there's nothing resembling
- * a database here, just a folder of JSON files. */
+/** Walks the whole saved-resumes tree (skipping .build and .generated).
+ * Fine at personal-resume scale — no id->path index is maintained since
+ * there's nothing resembling a database here, just a folder of JSON files. */
 export function listResumeTree(): ResumeTreeNode[] {
   return walk(resolveSavedRoot(), "");
 }
@@ -267,8 +289,8 @@ export function overwriteManifestAtPath(manifestPath: string, manifest: ResumeMa
   return target;
 }
 
-/** Moves a saved resume's manifest json to a different folder under /saved
- * (drag-and-drop in the file browser). Only the manifest moves — compiled
+/** Moves a saved resume's manifest json to a different folder under the
+ * saved-resumes root (drag-and-drop in the file browser). Only the manifest moves — compiled
  * PDF/tex artifacts live in the shared id-keyed .build scratch dir (see
  * resolveSavedBuildDir) and aren't tied to the manifest's folder location. */
 export function moveManifest(id: string, targetFolderPath: string): string {

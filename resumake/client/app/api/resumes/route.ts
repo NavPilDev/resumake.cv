@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       typeof body.rawLatexOverride === "string" && body.rawLatexOverride.trim().length > 0
         ? body.rawLatexOverride
         : null;
-    const experience = loadExperience();
+    const experience = await loadExperience();
     const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides);
     const tex = rawLatexOverride ?? buildResumeTex(templateInput);
     const id = crypto.randomUUID();

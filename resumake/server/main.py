@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from experience_file import router as experience_router
+
 
 def _load_package(name: str, dirname: str):
     """resumake-agent/ has a hyphen in its name (not a valid `import`
@@ -26,6 +28,7 @@ resumake_agent = _load_package("resumake_agent", "resumake-agent")
 
 app = FastAPI()
 app.include_router(resumake_agent.router)
+app.include_router(experience_router)
 
 
 @app.get("/")

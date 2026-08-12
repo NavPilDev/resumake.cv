@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = saveExperience(body.experience);
+    const result = await saveExperience(body.experience);
     const payload: SaveExperienceResponse = result;
     return Response.json(payload);
   } catch (err) {

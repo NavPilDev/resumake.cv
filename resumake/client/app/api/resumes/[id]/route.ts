@@ -64,7 +64,7 @@ export async function PUT(
         ? body.rawLatexOverride
         : null;
     const existing = loadManifest(id);
-    const experience = loadExperience();
+    const experience = await loadExperience();
     const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides);
     const tex = rawLatexOverride ?? buildResumeTex(templateInput);
     const compileResult = await compileSavedResume(id, tex);

@@ -12,4 +12,4 @@ collection = client.get_or_create_collection(
 
 print(f"ChromaDB initialized with {collection.count()} documents")
 print(f"ChromaDB Memories: {collection.count()}")
-print("AI Braing Ready!")
+print("AI Brain Ready!")

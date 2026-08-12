@@ -97,8 +97,8 @@ export function selectionToTemplateInput(
   };
 }
 
-/** Compiles a saved resume's LaTeX under the shared /saved/.build scratch
- * dir, keyed by the manifest's globally-unique id — see
+/** Compiles a saved resume's LaTeX under the shared resumake-media/resumes/
+ * .build scratch dir, keyed by the manifest's globally-unique id — see
  * resolveSavedBuildDir()'s doc comment for why every saved resume shares
  * one build dir regardless of its folder location in the file browser. */
 export async function compileSavedResume(id: string, tex: string): Promise<CompileResult> {
