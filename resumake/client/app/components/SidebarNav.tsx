@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export type NavTab = "tailor" | "experience" | "resumes";
+export type NavTab = "tailor" | "experience" | "resumes" | "ats-scorer";
 
 interface NavItem {
   id: NavTab;
@@ -40,6 +40,19 @@ function ResumesIcon() {
   );
 }
 
+function AtsScorerIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M9 11.5 11 13.5 15.5 9" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function MenuIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -67,6 +80,13 @@ const NAV_ITEMS: NavItem[] = [
     label: "My Resumes",
     description: "Create and edit individual tailored resumes, organized into folders under saved/.",
     icon: <ResumesIcon />,
+  },
+  {
+    id: "ats-scorer",
+    label: "ATS Scorer",
+    description:
+      "Score your saved experience.yaml against six real ATS platforms' parsing/filtering behavior — deterministic, no LLM involved.",
+    icon: <AtsScorerIcon />,
   },
 ];
 

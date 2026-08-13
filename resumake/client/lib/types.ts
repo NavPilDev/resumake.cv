@@ -313,3 +313,76 @@ export interface ResumeAnchor {
   entryId?: string;
   bulletId?: string;
 }
+
+/** Mirrors resumake-agent/ats_scoring/types.py's AtsScoreRequest. */
+export interface AtsScoreRequest {
+  sections: Section[];
+  educationText: string;
+  skills: string[];
+  hasContactInfo: boolean;
+  hasSummary: boolean;
+  jdText: string;
+}
+
+export interface FormattingBreakdown {
+  score: number;
+  issues: string[];
+  details: string[];
+}
+
+export interface KeywordMatchBreakdown {
+  score: number;
+  matched: string[];
+  missing: string[];
+  synonymMatched: string[];
+}
+
+export interface SectionsBreakdown {
+  score: number;
+  present: string[];
+  missing: string[];
+}
+
+export interface ExperienceBreakdown {
+  score: number;
+  quantifiedBullets: number;
+  totalBullets: number;
+  actionVerbCount: number;
+  highlights: string[];
+}
+
+export interface EducationScoreBreakdown {
+  score: number;
+  notes: string[];
+}
+
+export interface ScoreBreakdown {
+  formatting: FormattingBreakdown;
+  keywordMatch: KeywordMatchBreakdown;
+  sections: SectionsBreakdown;
+  experience: ExperienceBreakdown;
+  education: EducationScoreBreakdown;
+}
+
+export interface StructuredSuggestion {
+  summary: string;
+  details: string[];
+  impact: "critical" | "high" | "medium" | "low";
+  platforms: string[];
+}
+
+export type Suggestion = string | StructuredSuggestion;
+
+/** One ATS platform's score result — mirrors
+ * resumake-agent/ats_scoring/types.py's ScoreResult. The response from
+ * POST /ollama/analyze/ats-score (relayed via /api/ats-score) is an
+ * array of these, one per platform, in ALL_PROFILES order (Workday,
+ * Taleo, SuccessFactors, iCIMS, Greenhouse, Lever). */
+export interface AtsScoreResult {
+  system: string;
+  vendor: string;
+  overallScore: number;
+  passesFilter: boolean;
+  breakdown: ScoreBreakdown;
+  suggestions: Suggestion[];
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import AtsScorer from "@/app/components/AtsScorer";
 import BulletCard from "@/app/components/BulletCard";
 import ExperienceBuilder from "@/app/components/ExperienceBuilder";
 import ResumesBuilder from "@/app/components/ResumesBuilder";
@@ -41,7 +42,7 @@ function genStageLabel(stage: "compiling" | "trimming" | "finalizing" | undefine
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"tailor" | "experience" | "resumes">("tailor");
+  const [activeTab, setActiveTab] = useState<"tailor" | "experience" | "resumes" | "ats-scorer">("tailor");
   const [jdText, setJdText] = useState("");
   const [maxBullets, setMaxBullets] = useState(4);
   const [mode, setMode] = useState<AnalyzeMode>("keyword");
@@ -245,7 +246,11 @@ export default function Home() {
         {activeTab !== "resumes" && (
           <header>
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              {activeTab === "tailor" ? "Tailor Resume" : "My Experience"}
+              {activeTab === "tailor"
+                ? "Tailor Resume"
+                : activeTab === "experience"
+                  ? "My Experience"
+                  : "ATS Scorer"}
             </h1>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
               {activeTab === "tailor" ? (
@@ -257,13 +262,22 @@ export default function Home() {
                   ) by keyword overlap and surface skill gaps. Nothing is written back to your resume —
                   review and copy in the bullets you want.
                 </>
-              ) : (
+              ) : activeTab === "experience" ? (
                 <>
                   Build or edit your{" "}
                   <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
                     experience.yaml
                   </code>{" "}
                   bullet bank from uploads, pasted text, or the form below.
+                </>
+              ) : (
+                <>
+                  Score your saved{" "}
+                  <code className="rounded bg-zinc-200 px-1 py-0.5 text-xs dark:bg-zinc-800">
+                    experience.yaml
+                  </code>{" "}
+                  against six real ATS platforms&apos; parsing and filtering behavior — deterministic, no
+                  LLM involved.
                 </>
               )}
             </p>
@@ -273,6 +287,8 @@ export default function Home() {
         {activeTab === "experience" && <ExperienceBuilder />}
 
         {activeTab === "resumes" && <ResumesBuilder />}
+
+        {activeTab === "ats-scorer" && <AtsScorer />}
 
         {activeTab === "tailor" && (
           <>
