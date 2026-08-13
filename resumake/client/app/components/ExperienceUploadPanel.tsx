@@ -125,6 +125,32 @@ function normalizeTags(value: unknown): string[] {
   return normalizeStringArray(value).filter((tag) => !PLACEHOLDER_TAG_TOKENS.has(tag.trim().toLowerCase()));
 }
 
+const PLACEHOLDER_TEXT_TOKENS = new Set([
+  "unknown",
+  "n/a",
+  "na",
+  "none",
+  "tbd",
+  "to be determined",
+  "not specified",
+  "not stated",
+  "not provided",
+  "not applicable",
+]);
+
+/** Blanks out common placeholder words a small local model sometimes fills a
+ * scalar field with when the source text doesn't actually state it, instead
+ * of omitting the field like the extraction prompt asks for — e.g. a
+ * project's "dates" coming back as the literal string "unknown" rather than
+ * being left out. Same defense-in-depth idea as normalizeTags above, just
+ * for free-text fields instead of tag arrays. */
+function cleanExtractedText(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return PLACEHOLDER_TEXT_TOKENS.has(trimmed.toLowerCase()) ? undefined : trimmed;
+}
+
 function normalizeBullets(bullets: Partial<Bullet>[] | undefined): Bullet[] {
   if (!Array.isArray(bullets)) return [];
   return bullets.map((b) => ({
@@ -204,9 +230,8 @@ function normalizeMeta(meta: Partial<Meta> | undefined): Partial<Meta> {
   const cleaned: Partial<Meta> = {};
   for (const [key, value] of Object.entries(meta)) {
     if (key === "social_links") continue;
-    if (typeof value === "string" && value.trim()) {
-      (cleaned as Record<string, string>)[key] = value.trim();
-    }
+    const text = cleanExtractedText(typeof value === "string" ? value : undefined);
+    if (text) (cleaned as Record<string, string>)[key] = text;
   }
   const socialLinks = (meta.social_links ?? []).filter((l) => l.platform?.trim() && l.url?.trim());
   if (socialLinks.length > 0) cleaned.social_links = socialLinks;
@@ -214,25 +239,25 @@ function normalizeMeta(meta: Partial<Meta> | undefined): Partial<Meta> {
 }
 
 function buildJobEntry(j: NonNullable<ExtractedExperienceFragment["jobs"]>[number]): JobEntry {
-  const dates = j.dates ?? "";
+  const dates = cleanExtractedText(j.dates) ?? "";
   const normalizedStart = normalizeJobDate(j.start_date);
   const normalizedEnd = normalizeJobDate(j.end_date);
   const fallback = !normalizedStart || !normalizedEnd ? parseDatesFromDisplayString(dates) : {};
 
   return {
     id: makeId("job"),
-    company: j.company ?? "",
-    role: j.role ?? "",
+    company: cleanExtractedText(j.company) ?? "",
+    role: cleanExtractedText(j.role) ?? "",
     dates,
     start_date: normalizedStart ?? fallback.start,
     end_date: normalizedEnd ?? fallback.end,
     date_confidence: j.date_confidence ?? "unknown",
-    location: j.location,
-    work_mode: j.work_mode,
+    location: cleanExtractedText(j.location),
+    work_mode: cleanExtractedText(j.work_mode),
     hours_per_week: normalizeNumber(j.hours_per_week),
-    pay_plan: j.pay_plan,
-    pay_series: j.pay_series,
-    pay_grade: j.pay_grade,
+    pay_plan: cleanExtractedText(j.pay_plan),
+    pay_series: cleanExtractedText(j.pay_series),
+    pay_grade: cleanExtractedText(j.pay_grade),
     included: true,
     bullets: normalizeBullets(j.bullets),
   };
@@ -241,8 +266,8 @@ function buildJobEntry(j: NonNullable<ExtractedExperienceFragment["jobs"]>[numbe
 function buildProjectEntry(p: NonNullable<ExtractedExperienceFragment["projects"]>[number]): ProjectEntry {
   return {
     id: makeId("project"),
-    name: p.name ?? "",
-    dates: p.dates ?? "",
+    name: cleanExtractedText(p.name) ?? "",
+    dates: cleanExtractedText(p.dates) ?? "",
     date_confidence: p.date_confidence ?? "unknown",
     links: normalizeLinks(p.links),
     included: true,
@@ -253,15 +278,15 @@ function buildProjectEntry(p: NonNullable<ExtractedExperienceFragment["projects"
 function buildEducationEntry(e: NonNullable<ExtractedExperienceFragment["education"]>[number]): EducationEntry {
   return {
     id: makeId("edu"),
-    institution: e.institution ?? "",
-    credential: e.credential ?? "",
-    degree_level: e.degree_level,
-    major: e.major,
-    dates: e.dates ?? "",
+    institution: cleanExtractedText(e.institution) ?? "",
+    credential: cleanExtractedText(e.credential) ?? "",
+    degree_level: cleanExtractedText(e.degree_level),
+    major: cleanExtractedText(e.major),
+    dates: cleanExtractedText(e.dates) ?? "",
     graduation_date: e.graduation_date,
-    gpa: e.gpa,
+    gpa: cleanExtractedText(e.gpa),
     date_confidence: e.date_confidence ?? "unknown",
-    location: e.location,
+    location: cleanExtractedText(e.location),
     details: normalizeStringArray(e.details),
     links: normalizeLinks(e.links),
     included: true,
@@ -271,11 +296,11 @@ function buildEducationEntry(e: NonNullable<ExtractedExperienceFragment["educati
 function buildCertification(c: NonNullable<ExtractedExperienceFragment["certifications"]>[number]): Certification {
   return {
     id: makeId("cert"),
-    name: c.name ?? "",
-    issuer: c.issuer,
-    date: c.date,
-    expiration_date: c.expiration_date,
-    credential_id: c.credential_id,
+    name: cleanExtractedText(c.name) ?? "",
+    issuer: cleanExtractedText(c.issuer),
+    date: cleanExtractedText(c.date),
+    expiration_date: cleanExtractedText(c.expiration_date),
+    credential_id: cleanExtractedText(c.credential_id),
     links: normalizeLinks(c.links),
     included: true,
   };

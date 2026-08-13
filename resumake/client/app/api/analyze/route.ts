@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
   let experience;
   try {
-    experience = loadExperience();
+    experience = await loadExperience();
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "Failed to load experience.yaml" },

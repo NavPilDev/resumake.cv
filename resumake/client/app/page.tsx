@@ -507,7 +507,7 @@ export default function Home() {
                   <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
                     Writes a new .tex file (and compiles a PDF) into{" "}
                     <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
-                      latex-resumes/
+                      resumake-media/resumes/.generated/
                     </code>
                     , using master-resume.tex&apos;s template with your top-scoring jobs and projects
                     above (including any edits/improvements you&apos;ve made). It compiles repeatedly

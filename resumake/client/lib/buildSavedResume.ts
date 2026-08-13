@@ -1,4 +1,4 @@
-import type { BuildResumeTexInput } from "./latexTemplate";
+import type { BuildResumeTexInput, SpacingSettings } from "./latexTemplate";
 import { compileLatex, type CompileResult } from "./latexCompile";
 import { resolveSavedBuildDir, type ResumeSelection, type SectionSelection } from "./resumeFiles";
 import type { ExperienceData, GenerateResumeSectionInput, JobEntry, ProjectEntry } from "./types";
@@ -57,7 +57,8 @@ function projectToSectionInput(
 export function selectionToTemplateInput(
   experience: ExperienceData,
   selection: ResumeSelection,
-  textOverrides: Record<string, string>
+  textOverrides: Record<string, string>,
+  spacing?: Partial<SpacingSettings>
 ): BuildResumeTexInput {
   const jobs = experience.jobs
     .map((job) => (job.id ? jobToSectionInput(job, selection.jobs[job.id], textOverrides) : null))
@@ -94,11 +95,12 @@ export function selectionToTemplateInput(
     jobs,
     projects,
     certifications,
+    spacing,
   };
 }
 
-/** Compiles a saved resume's LaTeX under the shared /saved/.build scratch
- * dir, keyed by the manifest's globally-unique id — see
+/** Compiles a saved resume's LaTeX under the shared resumake-media/resumes/
+ * .build scratch dir, keyed by the manifest's globally-unique id — see
  * resolveSavedBuildDir()'s doc comment for why every saved resume shares
  * one build dir regardless of its folder location in the file browser. */
 export async function compileSavedResume(id: string, tex: string): Promise<CompileResult> {

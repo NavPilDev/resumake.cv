@@ -1,27 +1,27 @@
 import fs from "fs";
 import path from "path";
 
-/** Resolves a path relative to the repo root, whether the Next.js process's
- * cwd is the repo root or the resume-revisioner/ subdirectory (depends on
- * how `npm run dev` was invoked). */
-export function resolveRepoPath(relative: string): string {
-  const cwdCandidate = path.join(process.cwd(), relative);
-  if (fs.existsSync(cwdCandidate)) return cwdCandidate;
-
-  const parentCandidate = path.join(process.cwd(), "..", relative);
-  if (fs.existsSync(parentCandidate)) return parentCandidate;
-
-  throw new Error(
-    `Could not find ${relative} (looked in the current working directory and its parent).`
-  );
+/** Resolves the repo root by walking up from cwd looking for the `resumake`
+ * folder (this app's own grandparent) as a marker — robust to whichever
+ * directory the Next.js process's cwd happens to be (resumake/client when
+ * launched via `npm --prefix resumake/client run dev`, the repo root
+ * itself if launched some other way, etc.), unlike a hardcoded basename
+ * check. Always returns a path (never throws), since callers use this to
+ * create new files/dirs that may not exist yet. */
+export function resolveRepoRoot(): string {
+  let dir = process.cwd();
+  for (let i = 0; i < 4; i++) {
+    if (fs.existsSync(path.join(dir, "resumake"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
 }
 
-/** Resolves the repo root the same way regardless of whether anything at
- * that path exists yet — unlike resolveRepoPath, which requires the target
- * to already exist. Needed for anything that creates new files/dirs under
- * the repo root (e.g. /saved) rather than reading something already there. */
-export function resolveRepoRoot(): string {
-  return path.basename(process.cwd()) === "resume-revisioner"
-    ? path.join(process.cwd(), "..")
-    : process.cwd();
+/** Resolves resumake/server/resumake-media — this server's local data
+ * directory (git-ignored; see resumake/server/.gitignore) that holds
+ * experience.yaml and every saved/generated resume artifact. */
+export function resolveResumakeMediaRoot(): string {
+  return path.join(resolveRepoRoot(), "resumake", "server", "resumake-media");
 }

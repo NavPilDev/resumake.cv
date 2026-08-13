@@ -12,3 +12,4 @@ saved/
 experience.yaml
 
 
+resumake/server/**/__pycache__/

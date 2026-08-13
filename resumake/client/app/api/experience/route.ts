@@ -1,4 +1,4 @@
-import { loadExperience } from "@/lib/loadExperience";
+import { ExperienceFileNotFoundError, loadExperience } from "@/lib/loadExperience";
 import type { ExperienceData, GetExperienceResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -36,18 +36,18 @@ function backfillIds(data: ExperienceData): { data: ExperienceData; backfilled: 
 
 export async function GET() {
   try {
-    const { data: experience, backfilled } = backfillIds(loadExperience());
+    const { data: experience, backfilled } = backfillIds(await loadExperience());
     const payload: GetExperienceResponse = { experience, isNew: false, idsBackfilled: backfilled };
     return Response.json(payload);
   } catch (err) {
-    // A brand-new user with no experience.yaml on disk yet isn't an error —
-    // resolveRepoPath throws because nothing exists to find. Any other
-    // failure (e.g. malformed YAML) should still surface loudly.
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("Could not find")) {
+    // A brand-new user with no experience.yaml on disk yet isn't an error.
+    // Any other failure (e.g. malformed YAML, agent server unreachable)
+    // should still surface loudly.
+    if (err instanceof ExperienceFileNotFoundError) {
       const payload: GetExperienceResponse = { experience: EMPTY_EXPERIENCE, isNew: true, idsBackfilled: false };
       return Response.json(payload);
     }
+    const message = err instanceof Error ? err.message : String(err);
     return Response.json({ error: message }, { status: 500 });
   }
 }

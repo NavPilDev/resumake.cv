@@ -58,8 +58,8 @@ export async function POST(request: Request) {
       typeof body.rawLatexOverride === "string" && body.rawLatexOverride.trim().length > 0
         ? body.rawLatexOverride
         : null;
-    const experience = loadExperience();
-    const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides);
+    const experience = await loadExperience();
+    const templateInput = selectionToTemplateInput(experience, body.selection, body.textOverrides, body.spacing);
     const tex = rawLatexOverride ?? buildResumeTex(templateInput);
     const id = crypto.randomUUID();
     const compileResult = await compileSavedResume(id, tex);
@@ -73,6 +73,7 @@ export async function POST(request: Request) {
       selection: body.selection,
       textOverrides: body.textOverrides,
       rawLatexOverride,
+      spacing: body.spacing,
       lastCompile: { pagesUsed: compileResult.pages, compiledAt: now },
     };
     writeManifest(body.folderPath, manifest);

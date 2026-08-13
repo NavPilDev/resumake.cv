@@ -4,7 +4,7 @@ import { loadExperience } from "./loadExperience";
 import { cleanupJob, compileLatex } from "./latexCompile";
 import { sanitizeFilename } from "./latexEscape";
 import { buildResumeTex } from "./latexTemplate";
-import { resolveRepoPath } from "./repoPaths";
+import { resolveGeneratedResumesDir } from "./resumeFiles";
 import { selectTopSections, toTemplateInput, trimOnce } from "./resumeFit";
 import type { GenerateProgressEvent, GenerateResumeRequest, GenerateResumeResponse } from "./types";
 
@@ -54,13 +54,13 @@ export async function* generateResumeStream(
 ): AsyncGenerator<GenerateProgressEvent> {
   const { filename, maxJobs, maxProjects, maxPages, sections, confirmOverwrite } = input;
 
-  const experience = loadExperience();
-  const latexResumesDir = resolveRepoPath("latex-resumes");
+  const experience = await loadExperience();
+  const latexResumesDir = resolveGeneratedResumesDir();
 
   if (fs.existsSync(path.join(latexResumesDir, `${filename}.tex`)) && !confirmOverwrite) {
     yield {
       type: "needs_confirmation",
-      message: `A file named "${filename}.tex" already exists in latex-resumes/. Generate again to overwrite it.`,
+      message: `A file named "${filename}.tex" already exists. Generate again to overwrite it.`,
     };
     return;
   }
@@ -128,12 +128,14 @@ export async function* generateResumeStream(
   });
   const finalResult = await compileLatex(latexResumesDir, filename, finalTex);
   if (finalResult.pages === null) {
-    warnings.push("Final compile did not produce a PDF — see latex-resumes/build/ for the LaTeX log.");
+    warnings.push(
+      "Final compile did not produce a PDF — see resumake-media/resumes/.generated/build/ for the LaTeX log."
+    );
   }
 
   const payload: GenerateResumeResponse = {
-    texPath: `latex-resumes/${filename}.tex`,
-    pdfPath: finalResult.pages !== null ? `latex-resumes/out/${filename}.pdf` : undefined,
+    texPath: `resumake-media/resumes/.generated/${filename}.tex`,
+    pdfPath: finalResult.pages !== null ? `resumake-media/resumes/.generated/out/${filename}.pdf` : undefined,
     pagesUsed: finalResult.pages,
     trimmedItems,
     warnings: warnings.length > 0 ? warnings : undefined,
