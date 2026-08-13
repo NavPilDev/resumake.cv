@@ -19,7 +19,7 @@ from ..models import Section
 
 
 class FormattingBreakdown(BaseModel):
-    score: int
+    score: float
     issues: list[str]
     details: list[str]
 
